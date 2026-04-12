@@ -1,0 +1,2 @@
+interpolator441.vhd,vhdl,xil_defaultlib,../../../../toy-dac.gen/sources_1/ip/interpolator441/sim/interpolator441.vhd,
+glbl.v,Verilog,xil_defaultlib,glbl.v

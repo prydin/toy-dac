@@ -1,0 +1,2 @@
+fir_compiler_0.vhd,vhdl,xil_defaultlib,../../../../toy-dac.gen/sources_1/ip/fir_compiler_0/sim/fir_compiler_0.vhd,
+glbl.v,Verilog,xil_defaultlib,glbl.v
