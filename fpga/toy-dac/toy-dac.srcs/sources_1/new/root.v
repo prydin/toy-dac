@@ -165,6 +165,22 @@ wire signed [I2S_WORDLENGTH-1:0] dac_in_right = BYPASS_INTERPOLATOR ? src_right 
 wire dac_dv_left  = BYPASS_INTERPOLATOR ? src_valid_left  : filtered_valid_left;
 wire dac_dv_right = BYPASS_INTERPOLATOR ? src_valid_right : filtered_valid_right;
 
+wire [31:0] dither1;
+wire [31:0] dither2;
+
+random dither_gen1 (
+    .clk(mclk),
+    .rst(rst),
+    .dout(dither1)
+);
+
+random dither_gen2 (
+    .clk(mclk),
+    .rst(rst),
+    .dout(dither2)
+);
+
+
 // The DAC itself
 wire signed [MODULATOR_WORDLENGTH-1:0] dac_held_right;
 
@@ -175,6 +191,8 @@ dac #(
     .rst(rst),
     .din(dac_in_left), 
     .dvalid(dac_dv_left),
+    .dither1(dither1),
+    .dither2(dither2),
     .dout(dac_out_l),
     .din_held_debug(dac_held_left)
 );
@@ -187,6 +205,8 @@ dac #(
     .rst(rst),
     .din(dac_in_right), 
     .dvalid(dac_dv_right),
+    .dither1(dither1),
+    .dither2(dither2),
     .dout(dac_out_r),
     .din_held_debug(dac_held_right)
 );

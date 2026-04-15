@@ -3,57 +3,37 @@
    <wave_state>
    </wave_state>
    <db_ref_list>
-      <db_ref path="dac_isolated_tb_behav.wdb" id="1">
+      <db_ref path="random_tb_behav.wdb" id="1">
          <top_modules>
-            <top_module name="dac_isolated_tb" />
             <top_module name="glbl" />
+            <top_module name="random_tb" />
          </top_modules>
       </db_ref>
    </db_ref_list>
    <zoom_setting>
-      <ZoomStartTime time="338.424292 us"></ZoomStartTime>
-      <ZoomEndTime time="4,062.424293 us"></ZoomEndTime>
-      <Cursor1Time time="2,316.090042 us"></Cursor1Time>
+      <ZoomStartTime time="0.000 ns"></ZoomStartTime>
+      <ZoomEndTime time="182.501 ns"></ZoomEndTime>
+      <Cursor1Time time="34.200 ns"></Cursor1Time>
    </zoom_setting>
    <column_width_setting>
-      <NameColumnWidth column_width="270"></NameColumnWidth>
-      <ValueColumnWidth column_width="62"></ValueColumnWidth>
+      <NameColumnWidth column_width="303"></NameColumnWidth>
+      <ValueColumnWidth column_width="66"></ValueColumnWidth>
    </column_width_setting>
-   <WVObjectSize size="6" />
-   <wvobject fp_name="/dac_isolated_tb/dac_filtered/din" type="array">
-      <obj_property name="ElementShortName">din[31:0]</obj_property>
-      <obj_property name="ObjectShortName">din[31:0]</obj_property>
-      <obj_property name="WaveformStyle">STYLE_ANALOG</obj_property>
-      <obj_property name="CellHeight">100</obj_property>
-      <obj_property name="Radix">SIGNEDDECRADIX</obj_property>
-      <obj_property name="AnalogYRangeType">ANALOG_YRANGETYPE_AUTO</obj_property>
-      <obj_property name="AnalogYRangeMin">-10000000.000000</obj_property>
-      <obj_property name="AnalogYRRangeMax">10000000.000000</obj_property>
-      <obj_property name="AnalogInterpolation">ANALOG_INTERPOLATION_LINEAR</obj_property>
-      <obj_property name="AnalogOffscale">ANALOG_OFFSCALE_HIDE</obj_property>
-      <obj_property name="AnalogHorizLine">0.000000</obj_property>
+   <WVObjectSize size="4" />
+   <wvobject fp_name="/random_tb/dout" type="array">
+      <obj_property name="ElementShortName">dout[31:0]</obj_property>
+      <obj_property name="ObjectShortName">dout[31:0]</obj_property>
    </wvobject>
-   <wvobject fp_name="/dac_isolated_tb/dac_filtered/sigma" type="array">
-      <obj_property name="ElementShortName">sigma[63:0]</obj_property>
-      <obj_property name="ObjectShortName">sigma[63:0]</obj_property>
+   <wvobject fp_name="/random_tb/uut/state0" type="array">
+      <obj_property name="ElementShortName">state0[63:0]</obj_property>
+      <obj_property name="ObjectShortName">state0[63:0]</obj_property>
    </wvobject>
-   <wvobject fp_name="/dac_isolated_tb/dac_filtered/dout" type="logic">
-      <obj_property name="ElementShortName">dout</obj_property>
-      <obj_property name="ObjectShortName">dout</obj_property>
+   <wvobject fp_name="/random_tb/uut/state1" type="array">
+      <obj_property name="ElementShortName">state1[63:0]</obj_property>
+      <obj_property name="ObjectShortName">state1[63:0]</obj_property>
    </wvobject>
-   <wvobject fp_name="/dac_isolated_tb/interp_valid" type="logic">
-      <obj_property name="ElementShortName">interp_valid</obj_property>
-      <obj_property name="ObjectShortName">interp_valid</obj_property>
-   </wvobject>
-   <wvobject fp_name="/dac_isolated_tb/interp_ready" type="logic">
-      <obj_property name="ElementShortName">interp_ready</obj_property>
-      <obj_property name="ObjectShortName">interp_ready</obj_property>
-   </wvobject>
-   <wvobject fp_name="/dac_isolated_tb/dac_direct/din" type="array">
-      <obj_property name="ElementShortName">din[31:0]</obj_property>
-      <obj_property name="ObjectShortName">din[31:0]</obj_property>
-      <obj_property name="WaveformStyle">STYLE_ANALOG</obj_property>
-      <obj_property name="CellHeight">100</obj_property>
-      <obj_property name="Radix">SIGNEDDECRADIX</obj_property>
+   <wvobject fp_name="/random_tb/uut/tmp1" type="array">
+      <obj_property name="ElementShortName">tmp1[63:0]</obj_property>
+      <obj_property name="ObjectShortName">tmp1[63:0]</obj_property>
    </wvobject>
 </wave_config>

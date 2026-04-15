@@ -35,7 +35,7 @@ static INLINE uint64_t xoroshiro128plusplus_next(uint64_t *s) {
 
 	s1 ^= s0;
 	s[0] = rotl(s0, 49) ^ s1 ^ (s1 << 21); // a, b
-	s[1] = rotl(s1, 28); // c
+	s[1] = rotl(s1, 28); // c 
 
 	return result;
 } */
@@ -43,7 +43,7 @@ static INLINE uint64_t xoroshiro128plusplus_next(uint64_t *s) {
 reg [63:0] state0;
 reg [63:0] state1;
 wire [63:0] tmp1 = state0 ^ state1;
-wire [63:0] tmp2 = rotl(state0 + state1, 17);
+wire [63:0] tmp2 = rotl(state0 + tmp1, 17) + state0;
 
 always @(posedge clk) begin
     if (rst) begin
@@ -53,7 +53,7 @@ always @(posedge clk) begin
     end else begin
         state0 <= rotl(state0, 49) ^ tmp1 ^ (tmp1 << 21);
         state1 <= rotl(tmp1, 28);
-        dout <= tmp2 + state0;
+        dout <= tmp2[31:0]; // Output the lower WORDLENGTH bits
     end
 end
 

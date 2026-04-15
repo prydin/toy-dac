@@ -83,9 +83,9 @@ String inputBuf;
 void loop() {
   while (Serial.available()) {
     char c = Serial.read();
-    Serial.printf("Received char: '%c\n' (0x%02x)\n", c, (uint8_t)c);
+    //Serial.printf("Received char: '%c\n' (0x%02x)\n", c, (uint8_t)c);
     if (c == ';') {
-      Serial.printf("Received command: '%s'\n", inputBuf.c_str());
+      //Serial.printf("Received command: '%s'\n", inputBuf.c_str());
       handleLine(inputBuf);
       inputBuf = String();
     } else {
