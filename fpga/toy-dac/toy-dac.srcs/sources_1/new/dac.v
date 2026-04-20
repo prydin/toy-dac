@@ -41,7 +41,7 @@ reg signed [WORDLENGTH-1:0] din_held = 0;
 // The resulting perturbation is quantization error, which the NTF (1-z^-1)^2
 // high-pass shapes to ultrasonic frequencies. This lets us use enough amplitude
 // to actually matter without colouring the audio band.
-localparam DITHER_BITS = 16;
+localparam DITHER_BITS = 8; // Number of dither bits (tradeoff: more bits = better noise shaping but more FPGA resources)
 wire signed [DITHER_BITS-1:0] dither1_s = $signed(dither1[DITHER_BITS-1:0]);
 wire signed [DITHER_BITS-1:0] dither2_s = $signed(dither2[DITHER_BITS-1:0]);
 

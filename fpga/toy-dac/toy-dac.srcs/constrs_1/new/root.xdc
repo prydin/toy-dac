@@ -84,10 +84,12 @@ set_property -dict {PACKAGE_PIN C1 IOSTANDARD LVCMOS33} [get_ports debug2]
 set_property -dict {PACKAGE_PIN B3 IOSTANDARD LVCMOS33} [get_ports debug3]
 set_property -dict {PACKAGE_PIN B4 IOSTANDARD LVCMOS33} [get_ports debug4]
 
-# DAC outputs (differential: + and − on separate pins)
+# DAC outputs (differential: each channel on a matched P/N I/O pair)
+# Left channel:  A4 (IO_L3P_T0_34) / A3 (IO_L3N_T0_34)
+# Right channel: N2 (IO_L7P_T1_34) / M2 (IO_L7N_T1_34)
 set_property -dict {PACKAGE_PIN A4 IOSTANDARD LVCMOS33} [get_ports dac_out_l]
-set_property -dict {PACKAGE_PIN A3 IOSTANDARD LVCMOS33} [get_ports dac_out_r]
-set_property -dict {PACKAGE_PIN N2 IOSTANDARD LVCMOS33} [get_ports dac_out_ln]
+set_property -dict {PACKAGE_PIN A3 IOSTANDARD LVCMOS33} [get_ports dac_out_ln]
+set_property -dict {PACKAGE_PIN N2 IOSTANDARD LVCMOS33} [get_ports dac_out_r]
 set_property -dict {PACKAGE_PIN M2 IOSTANDARD LVCMOS33} [get_ports dac_out_rn]
 
 ## Quad SPI Flash

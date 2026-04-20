@@ -310,10 +310,30 @@ dac #(
     .din_held_debug(dac_held_right)
 );
 
-// Gate DAC outputs: off mode outputs steady 0 (50% duty = 0V DC)
-assign dac_out_l  = (mode == MODE_OFF) ? 1'b0 : dac_raw_l;
-assign dac_out_r  = (mode == MODE_OFF) ? 1'b0 : dac_raw_r;
-assign dac_out_ln = (mode == MODE_OFF) ? 1'b0 : ~dac_raw_l;
-assign dac_out_rn = (mode == MODE_OFF) ? 1'b0 : ~dac_raw_r;
+// Output registers for DAC — these get packed into IOB flip-flops
+// via the IOB=TRUE constraint, ensuring + and − switch simultaneously.
+(* IOB = "TRUE" *) reg dac_out_l_r  = 0;
+(* IOB = "TRUE" *) reg dac_out_ln_r = 0;
+(* IOB = "TRUE" *) reg dac_out_r_r  = 0;
+(* IOB = "TRUE" *) reg dac_out_rn_r = 0;
+
+always @(posedge mclk) begin
+    if (rst || mode == MODE_OFF) begin
+        dac_out_l_r  <= 1'b0;
+        dac_out_ln_r <= 1'b0;
+        dac_out_r_r  <= 1'b0;
+        dac_out_rn_r <= 1'b0;
+    end else begin
+        dac_out_l_r  <=  dac_raw_l;
+        dac_out_ln_r <= ~dac_raw_l;
+        dac_out_r_r  <=  dac_raw_r;
+        dac_out_rn_r <= ~dac_raw_r;
+    end
+end
+
+assign dac_out_l  = dac_out_l_r;
+assign dac_out_ln = dac_out_ln_r;
+assign dac_out_r  = dac_out_r_r;
+assign dac_out_rn = dac_out_rn_r;
     
 endmodule
