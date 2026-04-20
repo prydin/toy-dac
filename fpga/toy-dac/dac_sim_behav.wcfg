@@ -3,37 +3,57 @@
    <wave_state>
    </wave_state>
    <db_ref_list>
-      <db_ref path="random_tb_behav.wdb" id="1">
+      <db_ref path="dds_dac_tb_behav.wdb" id="1">
          <top_modules>
+            <top_module name="dds_dac_tb" />
             <top_module name="glbl" />
-            <top_module name="random_tb" />
          </top_modules>
       </db_ref>
    </db_ref_list>
    <zoom_setting>
-      <ZoomStartTime time="0.000 ns"></ZoomStartTime>
-      <ZoomEndTime time="182.501 ns"></ZoomEndTime>
-      <Cursor1Time time="34.200 ns"></Cursor1Time>
+      <ZoomStartTime time="0.000000 us"></ZoomStartTime>
+      <ZoomEndTime time="1,083.087555 us"></ZoomEndTime>
+      <Cursor1Time time="163.237618 us"></Cursor1Time>
    </zoom_setting>
    <column_width_setting>
-      <NameColumnWidth column_width="303"></NameColumnWidth>
-      <ValueColumnWidth column_width="66"></ValueColumnWidth>
+      <NameColumnWidth column_width="278"></NameColumnWidth>
+      <ValueColumnWidth column_width="98"></ValueColumnWidth>
    </column_width_setting>
-   <WVObjectSize size="4" />
-   <wvobject fp_name="/random_tb/dout" type="array">
-      <obj_property name="ElementShortName">dout[31:0]</obj_property>
-      <obj_property name="ObjectShortName">dout[31:0]</obj_property>
+   <WVObjectSize size="6" />
+   <wvobject fp_name="/dds_dac_tb/dds_data" type="array">
+      <obj_property name="ElementShortName">dds_data[31:0]</obj_property>
+      <obj_property name="ObjectShortName">dds_data[31:0]</obj_property>
    </wvobject>
-   <wvobject fp_name="/random_tb/uut/state0" type="array">
-      <obj_property name="ElementShortName">state0[63:0]</obj_property>
-      <obj_property name="ObjectShortName">state0[63:0]</obj_property>
+   <wvobject fp_name="/dds_dac_tb/dac_out" type="logic">
+      <obj_property name="ElementShortName">dac_out</obj_property>
+      <obj_property name="ObjectShortName">dac_out</obj_property>
    </wvobject>
-   <wvobject fp_name="/random_tb/uut/state1" type="array">
-      <obj_property name="ElementShortName">state1[63:0]</obj_property>
-      <obj_property name="ObjectShortName">state1[63:0]</obj_property>
+   <wvobject fp_name="/dds_dac_tb/dac_inst/sigma2" type="array">
+      <obj_property name="ElementShortName">sigma2[39:0]</obj_property>
+      <obj_property name="ObjectShortName">sigma2[39:0]</obj_property>
    </wvobject>
-   <wvobject fp_name="/random_tb/uut/tmp1" type="array">
-      <obj_property name="ElementShortName">tmp1[63:0]</obj_property>
-      <obj_property name="ObjectShortName">tmp1[63:0]</obj_property>
+   <wvobject fp_name="/dds_dac_tb/dac_inst/sigma" type="array">
+      <obj_property name="ElementShortName">sigma[39:0]</obj_property>
+      <obj_property name="ObjectShortName">sigma[39:0]</obj_property>
+   </wvobject>
+   <wvobject fp_name="/dds_dac_tb/dac_inst/din" type="array">
+      <obj_property name="ElementShortName">din[31:0]</obj_property>
+      <obj_property name="ObjectShortName">din[31:0]</obj_property>
+      <obj_property name="Radix">SIGNEDDECRADIX</obj_property>
+      <obj_property name="WaveformStyle">STYLE_ANALOG</obj_property>
+      <obj_property name="CellHeight">100</obj_property>
+      <obj_property name="AnalogYRangeType">ANALOG_YRANGETYPE_FIXED</obj_property>
+      <obj_property name="AnalogYRangeMin">-50000000.000000</obj_property>
+      <obj_property name="AnalogYRRangeMax">50000000.000000</obj_property>
+      <obj_property name="AnalogInterpolation">ANALOG_INTERPOLATION_LINEAR</obj_property>
+      <obj_property name="AnalogOffscale">ANALOG_OFFSCALE_HIDE</obj_property>
+      <obj_property name="AnalogHorizLine">0.000000</obj_property>
+   </wvobject>
+   <wvobject fp_name="/dds_dac_tb/filtered_out" type="array">
+      <obj_property name="ElementShortName">filtered_out[31:0]</obj_property>
+      <obj_property name="ObjectShortName">filtered_out[31:0]</obj_property>
+      <obj_property name="Radix">SIGNEDDECRADIX</obj_property>
+      <obj_property name="WaveformStyle">STYLE_ANALOG</obj_property>
+      <obj_property name="CellHeight">100</obj_property>
    </wvobject>
 </wave_config>

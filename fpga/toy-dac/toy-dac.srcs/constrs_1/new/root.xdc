@@ -8,8 +8,8 @@ set_property -dict {PACKAGE_PIN M9 IOSTANDARD LVCMOS33} [get_ports clk]
 # create_clock -period 83.330 -name sys_clk_pin -waveform {0.000 41.660} [get_ports clk]
 
 ## Push Buttons
-#set_property -dict {PACKAGE_PIN D2 IOSTANDARD LVCMOS33} [get_ports {btn[0]}]
-#set_property -dict {PACKAGE_PIN D1 IOSTANDARD LVCMOS33} [get_ports {btn[1]}]
+set_property -dict {PACKAGE_PIN D2 IOSTANDARD LVCMOS33} [get_ports {btn[0]}]
+set_property -dict {PACKAGE_PIN D1 IOSTANDARD LVCMOS33} [get_ports {btn[1]}]
 
 ## RGB LEDs
 #set_property -dict { PACKAGE_PIN F1    IOSTANDARD LVCMOS33 } [get_ports { led0_b }]; #IO_L10N_T1_34 Sch=led0_b
@@ -17,10 +17,10 @@ set_property -dict {PACKAGE_PIN M9 IOSTANDARD LVCMOS33} [get_ports clk]
 #set_property -dict { PACKAGE_PIN F2    IOSTANDARD LVCMOS33 } [get_ports { led0_r }]; #IO_L10P_T1_34 Sch=led0_r
 
 ## 4 LEDs
-#set_property -dict {PACKAGE_PIN E2 IOSTANDARD LVCMOS33} [get_ports {led[0]}]
-#set_property -dict {PACKAGE_PIN K1 IOSTANDARD LVCMOS33} [get_ports {led[1]}]
-#set_property -dict {PACKAGE_PIN J1 IOSTANDARD LVCMOS33} [get_ports {led[2]}]
-#set_property -dict {PACKAGE_PIN E1 IOSTANDARD LVCMOS33} [get_ports {led[3]}]
+set_property -dict {PACKAGE_PIN E2 IOSTANDARD LVCMOS33} [get_ports {led[0]}]
+set_property -dict {PACKAGE_PIN K1 IOSTANDARD LVCMOS33} [get_ports {led[1]}]
+set_property -dict {PACKAGE_PIN J1 IOSTANDARD LVCMOS33} [get_ports {led[2]}]
+set_property -dict {PACKAGE_PIN E1 IOSTANDARD LVCMOS33} [get_ports {led[3]}]
 
 ## Pmod Header JA
 #set_property -dict { PACKAGE_PIN J2    IOSTANDARD LVCMOS33 } [get_ports { ja[0] }]; #IO_L14P_T2_SRCC_34 Sch=ja[1]
@@ -84,9 +84,11 @@ set_property -dict {PACKAGE_PIN C1 IOSTANDARD LVCMOS33} [get_ports debug2]
 set_property -dict {PACKAGE_PIN B3 IOSTANDARD LVCMOS33} [get_ports debug3]
 set_property -dict {PACKAGE_PIN B4 IOSTANDARD LVCMOS33} [get_ports debug4]
 
-# DAC outputs
+# DAC outputs (differential: + and − on separate pins)
 set_property -dict {PACKAGE_PIN A4 IOSTANDARD LVCMOS33} [get_ports dac_out_l]
 set_property -dict {PACKAGE_PIN A3 IOSTANDARD LVCMOS33} [get_ports dac_out_r]
+set_property -dict {PACKAGE_PIN N2 IOSTANDARD LVCMOS33} [get_ports dac_out_ln]
+set_property -dict {PACKAGE_PIN M2 IOSTANDARD LVCMOS33} [get_ports dac_out_rn]
 
 ## Quad SPI Flash
 ## Note: QSPI clock can only be accessed through the STARTUPE2 primitive

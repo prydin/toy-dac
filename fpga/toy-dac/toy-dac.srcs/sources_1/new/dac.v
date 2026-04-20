@@ -19,7 +19,6 @@ module dac #(
 assign din_held_debug = din_held;
 
 localparam GUARD_BITS = 8; // Number of guard bits for integrator headroom
-localparam DITHER_BITS = 8;
 localparam ACCLENGTH = WORDLENGTH + GUARD_BITS; // Guard bits for integrator headroom
 
 // 2**WORDLENGTH computed in ACCLENGTH bits to avoid 32-bit overflow
@@ -38,8 +37,13 @@ wire signed [ACCLENGTH-1:0] q_feedback2 = (dout ? up_inc : down_inc);
 
 reg signed [WORDLENGTH-1:0] din_held = 0;
 
-wire signed [DITHER_BITS-1:0] dither1_scaled = $signed(dither1[DITHER_BITS-1:0]);
-wire signed [DITHER_BITS-1:0] dither2_scaled = $signed(dither2[DITHER_BITS-1:0]);
+// Dither applied at the comparator (quantizer) input to break limit cycles.
+// The resulting perturbation is quantization error, which the NTF (1-z^-1)^2
+// high-pass shapes to ultrasonic frequencies. This lets us use enough amplitude
+// to actually matter without colouring the audio band.
+localparam DITHER_BITS = 16;
+wire signed [DITHER_BITS-1:0] dither1_s = $signed(dither1[DITHER_BITS-1:0]);
+wire signed [DITHER_BITS-1:0] dither2_s = $signed(dither2[DITHER_BITS-1:0]);
 
 always @(posedge clk or posedge rst) begin
     if (rst) begin
@@ -52,17 +56,17 @@ always @(posedge clk or posedge rst) begin
         if (dvalid)
             din_held <= din;
 
-        // First stage: integrate sample - feedback (feedback uses first-stage bitstream)
+        // First stage: integrate input - feedback (clean accumulator)
         q_feedback1 = (dout1 ? up_inc : down_inc);
         first_out_signed = q_feedback1;
-        sigma <= sigma + (din_held - q_feedback1) + dither1_scaled;
-        // First-stage bitstream (based on previous integrator value)
-        dout1 <= (sigma >= 0) ? 1'b1 : 1'b0;
+        sigma <= sigma + (din_held - q_feedback1);
+        // First-stage bitstream: dither the comparator threshold
+        dout1 <= ((sigma + dither1_s) >= 0) ? 1'b1 : 1'b0;
 
-        // Second stage: integrate the first-stage bitstream
-        sigma2 <= sigma2 + (first_out_signed - q_feedback2) + dither2_scaled;
-        // Final output bitstream
-        dout <= (sigma2 >= 0) ? 1'b1 : 1'b0;
+        // Second stage: integrate the first-stage bitstream (clean accumulator)
+        sigma2 <= sigma2 + (first_out_signed - q_feedback2);
+        // Final output bitstream: dither the comparator threshold
+        dout <= ((sigma2 + dither2_s) >= 0) ? 1'b1 : 1'b0;
     end
 end 
 
