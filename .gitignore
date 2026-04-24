@@ -4,3 +4,7 @@
 /fpga/toy-dac/toy-dac.hw
 /fpga/toy-dac/toy-dac.runs
 /fpga/toy-dac/toy-dac.sim
+kicad/dac/dac-backups/dac-2026-04-15_193132.zip
+/kicad/dac/dac-backups
+/kicad/dac/dac-backups
+*.lck

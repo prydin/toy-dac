@@ -68,7 +68,8 @@ wire        dac_out;
 wire signed [31:0] din_held_debug;
 
 dac #(
-    .WORDLENGTH(32)
+    .WORDLENGTH(32),
+    .ORDER(2)
 ) dac_inst (
     .clk            (clk),
     .rst            (rst),

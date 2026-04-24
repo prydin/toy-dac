@@ -99,6 +99,21 @@ dds_compiler_0 test_signal (
   .m_axis_data_tdata(m_axis_data_tdata)       // output wire [15 : 0] m_axis_data_tdata
 );
 
+wire signed [31:0] dither1;
+wire signed [31:0] dither2;
+
+random_gen dither_gen1 (
+    .clk(aclk),
+    .rst(rst),
+    .random_out(dither1)
+);
+
+random_gen dither_gen2 (
+    .clk(aclk),
+    .rst(rst),
+    .random_out(dither2)
+);
+
 wire bclk;
 wire lrclk;
 wire din;
@@ -117,6 +132,8 @@ top top_inst (
     .bclk(bclk),
     .lrclk(lrclk),
     .din(din)
+    .dither1(dither1),
+    .dither2(dither2)
 );
 
 /*

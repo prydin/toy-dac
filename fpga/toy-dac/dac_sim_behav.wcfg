@@ -12,14 +12,14 @@
    </db_ref_list>
    <zoom_setting>
       <ZoomStartTime time="0.000000 us"></ZoomStartTime>
-      <ZoomEndTime time="1,083.087555 us"></ZoomEndTime>
-      <Cursor1Time time="163.237618 us"></Cursor1Time>
+      <ZoomEndTime time="911.000001 us"></ZoomEndTime>
+      <Cursor1Time time="217.503169 us"></Cursor1Time>
    </zoom_setting>
    <column_width_setting>
       <NameColumnWidth column_width="278"></NameColumnWidth>
-      <ValueColumnWidth column_width="98"></ValueColumnWidth>
+      <ValueColumnWidth column_width="94"></ValueColumnWidth>
    </column_width_setting>
-   <WVObjectSize size="6" />
+   <WVObjectSize size="7" />
    <wvobject fp_name="/dds_dac_tb/dds_data" type="array">
       <obj_property name="ElementShortName">dds_data[31:0]</obj_property>
       <obj_property name="ObjectShortName">dds_data[31:0]</obj_property>
@@ -55,5 +55,10 @@
       <obj_property name="Radix">SIGNEDDECRADIX</obj_property>
       <obj_property name="WaveformStyle">STYLE_ANALOG</obj_property>
       <obj_property name="CellHeight">100</obj_property>
+      <obj_property name="isExpanded"></obj_property>
+   </wvobject>
+   <wvobject fp_name="/dds_dac_tb/dac_inst/dither_tpdf" type="array">
+      <obj_property name="ElementShortName">dither_tpdf[16:0]</obj_property>
+      <obj_property name="ObjectShortName">dither_tpdf[16:0]</obj_property>
    </wvobject>
 </wave_config>
