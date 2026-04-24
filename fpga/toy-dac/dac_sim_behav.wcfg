@@ -3,62 +3,41 @@
    <wave_state>
    </wave_state>
    <db_ref_list>
-      <db_ref path="dds_dac_tb_behav.wdb" id="1">
+      <db_ref path="rate_detect_tb_behav.wdb" id="1">
          <top_modules>
-            <top_module name="dds_dac_tb" />
             <top_module name="glbl" />
+            <top_module name="rate_detect_tb" />
          </top_modules>
       </db_ref>
    </db_ref_list>
    <zoom_setting>
-      <ZoomStartTime time="0.000000 us"></ZoomStartTime>
-      <ZoomEndTime time="911.000001 us"></ZoomEndTime>
-      <Cursor1Time time="217.503169 us"></Cursor1Time>
+      <ZoomStartTime time="717.968333 us"></ZoomStartTime>
+      <ZoomEndTime time="900.568334 us"></ZoomEndTime>
+      <Cursor1Time time="870.135000 us"></Cursor1Time>
    </zoom_setting>
    <column_width_setting>
       <NameColumnWidth column_width="278"></NameColumnWidth>
-      <ValueColumnWidth column_width="94"></ValueColumnWidth>
+      <ValueColumnWidth column_width="90"></ValueColumnWidth>
    </column_width_setting>
-   <WVObjectSize size="7" />
-   <wvobject fp_name="/dds_dac_tb/dds_data" type="array">
-      <obj_property name="ElementShortName">dds_data[31:0]</obj_property>
-      <obj_property name="ObjectShortName">dds_data[31:0]</obj_property>
+   <WVObjectSize size="5" />
+   <wvobject fp_name="/rate_detect_tb/window_period" type="array">
+      <obj_property name="ElementShortName">window_period[31:0]</obj_property>
+      <obj_property name="ObjectShortName">window_period[31:0]</obj_property>
    </wvobject>
-   <wvobject fp_name="/dds_dac_tb/dac_out" type="logic">
-      <obj_property name="ElementShortName">dac_out</obj_property>
-      <obj_property name="ObjectShortName">dac_out</obj_property>
+   <wvobject fp_name="/rate_detect_tb/period" type="array">
+      <obj_property name="ElementShortName">period[15:0]</obj_property>
+      <obj_property name="ObjectShortName">period[15:0]</obj_property>
    </wvobject>
-   <wvobject fp_name="/dds_dac_tb/dac_inst/sigma2" type="array">
-      <obj_property name="ElementShortName">sigma2[39:0]</obj_property>
-      <obj_property name="ObjectShortName">sigma2[39:0]</obj_property>
+   <wvobject fp_name="/rate_detect_tb/uut/edge_counter" type="array">
+      <obj_property name="ElementShortName">edge_counter[3:0]</obj_property>
+      <obj_property name="ObjectShortName">edge_counter[3:0]</obj_property>
    </wvobject>
-   <wvobject fp_name="/dds_dac_tb/dac_inst/sigma" type="array">
-      <obj_property name="ElementShortName">sigma[39:0]</obj_property>
-      <obj_property name="ObjectShortName">sigma[39:0]</obj_property>
+   <wvobject fp_name="/rate_detect_tb/uut/period_counter" type="array">
+      <obj_property name="ElementShortName">period_counter[31:0]</obj_property>
+      <obj_property name="ObjectShortName">period_counter[31:0]</obj_property>
    </wvobject>
-   <wvobject fp_name="/dds_dac_tb/dac_inst/din" type="array">
-      <obj_property name="ElementShortName">din[31:0]</obj_property>
-      <obj_property name="ObjectShortName">din[31:0]</obj_property>
-      <obj_property name="Radix">SIGNEDDECRADIX</obj_property>
-      <obj_property name="WaveformStyle">STYLE_ANALOG</obj_property>
-      <obj_property name="CellHeight">100</obj_property>
-      <obj_property name="AnalogYRangeType">ANALOG_YRANGETYPE_FIXED</obj_property>
-      <obj_property name="AnalogYRangeMin">-50000000.000000</obj_property>
-      <obj_property name="AnalogYRRangeMax">50000000.000000</obj_property>
-      <obj_property name="AnalogInterpolation">ANALOG_INTERPOLATION_LINEAR</obj_property>
-      <obj_property name="AnalogOffscale">ANALOG_OFFSCALE_HIDE</obj_property>
-      <obj_property name="AnalogHorizLine">0.000000</obj_property>
-   </wvobject>
-   <wvobject fp_name="/dds_dac_tb/filtered_out" type="array">
-      <obj_property name="ElementShortName">filtered_out[31:0]</obj_property>
-      <obj_property name="ObjectShortName">filtered_out[31:0]</obj_property>
-      <obj_property name="Radix">SIGNEDDECRADIX</obj_property>
-      <obj_property name="WaveformStyle">STYLE_ANALOG</obj_property>
-      <obj_property name="CellHeight">100</obj_property>
-      <obj_property name="isExpanded"></obj_property>
-   </wvobject>
-   <wvobject fp_name="/dds_dac_tb/dac_inst/dither_tpdf" type="array">
-      <obj_property name="ElementShortName">dither_tpdf[16:0]</obj_property>
-      <obj_property name="ObjectShortName">dither_tpdf[16:0]</obj_property>
+   <wvobject fp_name="/rate_detect_tb/rate_valid" type="logic">
+      <obj_property name="ElementShortName">rate_valid</obj_property>
+      <obj_property name="ObjectShortName">rate_valid</obj_property>
    </wvobject>
 </wave_config>

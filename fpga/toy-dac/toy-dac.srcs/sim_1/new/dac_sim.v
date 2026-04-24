@@ -131,7 +131,7 @@ top top_inst (
     .clk(aclk),
     .bclk(bclk),
     .lrclk(lrclk),
-    .din(din)
+    .din(din),
     .dither1(dither1),
     .dither2(dither2)
 );

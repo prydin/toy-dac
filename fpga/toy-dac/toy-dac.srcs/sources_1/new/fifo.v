@@ -9,12 +9,12 @@ module fifo #(
     input  wire             rst,
 
     // Write interface
-    input  signed wire [WIDTH-1:0] wr_data,
+    input  wire signed [WIDTH-1:0] wr_data,
     input  wire             wr_en,
     output wire             full,
 
     // Read interface
-    output signed wire [WIDTH-1:0] rd_data,
+    output wire signed [WIDTH-1:0] rd_data,
     input  wire             rd_en,
     output wire             empty,
 

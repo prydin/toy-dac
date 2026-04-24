@@ -67,11 +67,6 @@ reg [9:0] sample_cnt = 0;
 reg       sample_valid = 0;
 reg signed [31:0] dds_held = 0;
 
-// -- Interpolator --
-wire        interp_ready;
-wire        interp_valid;
-wire signed [31:0] interp_data;
-
 
 
 wire sample_accepted = sample_valid & interp_ready;  // AXI handshake
@@ -93,6 +88,12 @@ always @(posedge clk) begin
         end
     end
 end
+
+// -- Interpolator --
+wire        interp_ready;
+wire        interp_valid;
+wire signed [31:0] interp_data;
+
 
 interpolator441 interp_inst (
     .aclk(clk),

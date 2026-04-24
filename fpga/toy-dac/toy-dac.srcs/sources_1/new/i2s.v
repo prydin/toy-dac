@@ -28,27 +28,31 @@ endmodule
 module i2s #(
     parameter WORDLENGTH = 32
     )(
-    input wire                   clk,             // 100MHz clock from crystal
-    input wire                   rst,             // Reset signal
-    input wire                   bclk,            // Bit clock for I2S
-    input wire                   lrclk,           // Left-right clock for I2S
-    input  wire                  din,             // Serial data input for I2S
+    input wire                   clk,               // 100MHz clock from crystal
+    input wire                   rst,               // Reset signal
+    input wire                   bclk,              // Bit clock for I2S
+    input wire                   lrclk,             // Left-right clock for I2S
+    input  wire                  din,               // Serial data input for I2S
     output reg signed [WORDLENGTH-1:0]  out_left = 0,    // Left channel word
     output reg signed [WORDLENGTH-1:0]  out_right = 0,   // Right channel word
-    output reg                   input_active = 0, // Indicates if at least one sample has been received
-    output reg                   left_valid = 0,   // AXI-Stream tvalid: held HIGH until left_ready
-    output reg                   right_valid = 0,  // AXI-Stream tvalid: held HIGH until right_ready
+    output reg                   input_active = 0,  // Indicates if at least one sample has been received
+    output reg                   left_valid = 0,    // AXI-Stream tvalid: held HIGH until left_ready
+    output reg                   right_valid = 0,   // AXI-Stream tvalid: held HIGH until right_ready
     input wire                   left_ready,        // AXI-Stream tready from downstream
-    input wire                   right_ready        // AXI-Stream tready from downstream
+    input wire                   right_ready,       // AXI-Stream tready from downstream
+    output wire clean_bclk,                         // Cleaned and synchronized bit clock
+    output wire clean_lrclk,                        // Cleaned and synchronized left-right clock
+    output wire bclk_neg_edge,                      // Pulses HIGH for one clk cycle on bclk falling edge
+    output wire bclk_pos_edge,                      // Pulses HIGH for one clk cycle on bclk rising edge
+    output wire lrclk_neg_edge,                     // Pulses HIGH for one clk cycle on lrclk falling edge
+    output wire lrclk_pos_edge                      // Pulses HIGH for one clk cycle on lrclk rising edge
 );
 
 wire bclk_sync;
 wire lrclk_sync;
 wire din_sync;
-wire bclk_neg_edge;
-wire bclk_pos_edge;
-wire lrclk_neg_edge;
-wire lrclk_pos_edge;
+assign clean_bclk = bclk_sync;
+assign clean_lrclk = lrclk_sync;
 
 
 flop_sync bclk_flop (
