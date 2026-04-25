@@ -69,6 +69,11 @@
    (
     // Clock out ports
     .mclk(mclk),     // output mclk
+    // Dynamic phase shift ports
+    .psclk(psclk), // input psclk
+    .psen(psen), // input psen
+    .psincdec(psincdec),     // input psincdec
+    .psdone(psdone),       // output psdone
     // Status and control signals
     .reset(reset), // input reset
     .locked(locked),       // output locked

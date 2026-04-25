@@ -18,6 +18,7 @@ module top(
 
 parameter I2S_WORDLENGTH = 32;
 parameter MODULATOR_WORDLENGTH = 32;
+parameter MODULATOR_ORDER = 3;  // 2=safe/stable, 3=good SNR if input < ~50% FS
 
 // ── Mode selector: btn[0] cycles through four signal sources ──
 // Mode 0 = I2S, Mode 1 = DDS 1 kHz test tone, Mode 2 = DC (1/1000 of max), Mode 3 = Off (0V)
@@ -36,14 +37,35 @@ wire right_valid;
 wire output_ready_left;
 wire output_ready_right;
 
-// Clock signals
+// ── Clock domains ────────────────────────────────────────────────
+// Two MMCMs, both fed from the 12 MHz crystal:
+//   sink domain (mclk):  phase-shifted by soft_pll, drives DAC pipeline
+//   source domain (clk_src/clk44k): rock-stable, drives I2S receiver
+//                                   and FIFO write side
+// The FIFO is the only path between the two domains.
 wire mclk;
-wire locked;
+wire mclk_locked;
+wire clk_src;
+wire src_locked;
+wire all_locked = mclk_locked & src_locked;
 
-// Hold everything in reset until the PLL locks and mclk is stable.
+// Hold everything in reset until both PLLs lock and clocks are stable.
 // Without this, the DAC/FIR run on a glitching clock during PLL startup
 // and accumulate corrupt state they never recover from.
-wire rst = ~locked;
+wire rst     = ~all_locked;   // sink (mclk) reset
+wire src_rst = ~all_locked;   // source (clk_src) reset
+
+// soft_pll → MMCM dynamic phase-shift port
+wire ps_en;
+wire ps_incdec;
+wire ps_done;
+
+// Single shared input buffer for the crystal pin. Both MMCMs are
+// configured with "No buffer" on their input so they can share this
+// one IBUFG (otherwise each tries to place its own IBUFG on the same
+// pin and placement fails).
+wire clk_ibuf;
+IBUF clk_ibuf_inst (.I(clk), .O(clk_ibuf));
 
 // ── Button debounce and mode cycling ──
 wire btn0_db;
@@ -104,24 +126,47 @@ assign debug2 = src_valid_left;       // Input valid to interpolator
 assign debug3 = output_ready_left;    // Interpolator tready (high when idle)
 assign debug4 = filtered_left[31];    // Interpolator output sign bit
 
-// Main clock 
-// Currently running at 128MHz which is a wild swag. Probably need to revisit
-// this as we learn more.
-clock main_clock
-   (
-    .mclk(mclk),            // output mclk
-    .reset(1'b0),           // PLL starts freely; rst is derived from locked
-    .locked(locked),        // output locked
-    .clk_in1(clk)           // input clk_in1
+// ── Sink-domain clock (phase-shifted by soft_pll) ────────────────
+// 54 MHz mclk with dynamic phase shift enabled. psclk is tied to mclk
+// itself, which is supported by the 7-series MMCM (psen/psincdec are
+// sampled on psclk; soft_pll lives on mclk so this keeps everything in
+// one domain).
+clock main_clock (
+    .mclk(mclk),                // output mclk (phase-shifted)
+    .reset(1'b0),               // PLL starts freely; rst is derived from locked
+    .locked(mclk_locked),       // output locked
+    .clk_in1(clk_ibuf),         // input ref clock (shared IBUFG output)
+    .psclk(mclk),               // PS port clocked by mclk
+    .psen(ps_en),               // pulse from soft_pll
+    .psincdec(ps_incdec),       // direction from soft_pll
+    .psdone(ps_done)            // back to soft_pll
+);
+
+// ── Source-domain clock (stable, never phase-shifted) ────────────
+// Two outputs available (clk44k, clk48k) for future sample-rate
+// switching; using clk44k for the 44.1 kHz hierarchy.
+wire clk48k_unused;
+src_clk source_clock (
+    .clk44k(clk_src),
+    .clk48k(clk48k_unused),
+    .reset(1'b0),
+    .locked(src_locked),
+    .clk_in1(clk_ibuf)
 );
 
 
-// I2S input
+// ── I2S input (source domain) ────────────────────────────────────
+// Lives entirely in the stable clk_src domain. Its AXI-stream output
+// feeds the FIFO write side; the FIFO bridges to the sink (mclk)
+// domain where everything else lives.
+wire fifo_full_l;
+wire fifo_full_r;
+
 i2s #(
     .WORDLENGTH(I2S_WORDLENGTH)
 ) i2s_inst (
-    .clk(mclk),
-    .rst(rst),
+    .clk(clk_src),
+    .rst(src_rst),
     .bclk(bclk),
     .lrclk(lrclk),
     .din(din),
@@ -130,8 +175,77 @@ i2s #(
     .input_active(input_active),
     .left_valid(left_valid),
     .right_valid(right_valid),
-    .left_ready(output_ready_left),
-    .right_ready(output_ready_right)
+    // Backpressure: stop accepting new samples when the FIFO is full.
+    // (If we get here, the soft_pll loop has lost lock or hasn't
+    // converged yet; the I2S receiver simply stalls.)
+    .left_ready(~fifo_full_l),
+    .right_ready(~fifo_full_r)
+);
+
+// ── Async FIFOs: clk_src → mclk, one per channel ─────────────────
+localparam integer FIFO_DEPTH = 64;
+localparam integer FIFO_CW    = $clog2(FIFO_DEPTH+1);
+
+wire signed [I2S_WORDLENGTH-1:0] fifo_dout_l;
+wire signed [I2S_WORDLENGTH-1:0] fifo_dout_r;
+wire fifo_empty_l;
+wire fifo_empty_r;
+wire [FIFO_CW-1:0] fifo_rd_count_l;
+wire [FIFO_CW-1:0] fifo_rd_count_r;
+wire fifo_rd_en_l;
+wire fifo_rd_en_r;
+
+fifo #(
+    .WIDTH(I2S_WORDLENGTH),
+    .DEPTH(FIFO_DEPTH)
+) fifo_l (
+    .wr_clk(clk_src),
+    .wr_rst(src_rst),
+    .wr_data(i2s_left),
+    .wr_en(left_valid & ~fifo_full_l),
+    .full(fifo_full_l),
+    .wr_count(),
+    .rd_clk(mclk),
+    .rd_rst(rst),
+    .rd_data(fifo_dout_l),
+    .rd_en(fifo_rd_en_l),
+    .empty(fifo_empty_l),
+    .rd_count(fifo_rd_count_l)
+);
+
+fifo #(
+    .WIDTH(I2S_WORDLENGTH),
+    .DEPTH(FIFO_DEPTH)
+) fifo_r (
+    .wr_clk(clk_src),
+    .wr_rst(src_rst),
+    .wr_data(i2s_right),
+    .wr_en(right_valid & ~fifo_full_r),
+    .full(fifo_full_r),
+    .wr_count(),
+    .rd_clk(mclk),
+    .rd_rst(rst),
+    .rd_data(fifo_dout_r),
+    .rd_en(fifo_rd_en_r),
+    .empty(fifo_empty_r),
+    .rd_count(fifo_rd_count_r)
+);
+
+// ── Soft-PLL: nudges mclk so that fifo fill stays at SETPOINT ────
+// Only meaningful when actually running I2S; held in reset in test
+// modes (otherwise the loop would saturate one way and stay there).
+wire soft_pll_rst = rst | (mode != MODE_I2S);
+
+soft_pll #(
+    .FIFO_DEPTH(FIFO_DEPTH),
+    .MCLK_HZ   (54_000_000)
+) soft_pll_inst (
+    .mclk      (mclk),
+    .rst       (soft_pll_rst),
+    .fifo_count(fifo_rd_count_l),  // L and R fill in lockstep
+    .psen      (ps_en),
+    .psincdec  (ps_incdec),
+    .psdone    (ps_done)
 );
 
 
@@ -206,14 +320,20 @@ always @(*) begin
             src_valid_left  = test_valid;
             src_valid_right = test_valid;
         end
-        default: begin // MODE_I2S
-            src_left       = i2s_left;
-            src_right      = i2s_right;
-            src_valid_left  = left_valid;
-            src_valid_right = right_valid;
+        default: begin // MODE_I2S — pull samples from the FIFO (sink side)
+            src_left        = fifo_dout_l;
+            src_right       = fifo_dout_r;
+            src_valid_left  = ~fifo_empty_l;
+            src_valid_right = ~fifo_empty_r;
         end
     endcase
 end
+
+// FIFO read enables: pop a sample only when the interpolator accepts
+// one in I2S mode. In test modes the FIFO is left untouched (it will
+// fill and the i2s receiver will stall — that's fine for test signals).
+assign fifo_rd_en_l = (mode == MODE_I2S) & ~fifo_empty_l & output_ready_left;
+assign fifo_rd_en_r = (mode == MODE_I2S) & ~fifo_empty_r & output_ready_right;
 
 
 wire filtered_valid_left;
@@ -284,7 +404,8 @@ wire dac_raw_l;
 wire dac_raw_r;
 
 dac #(
-    .WORDLENGTH(MODULATOR_WORDLENGTH)
+    .WORDLENGTH(MODULATOR_WORDLENGTH),
+    .ORDER(MODULATOR_ORDER)
 ) dac_left (
     .clk(mclk),
     .rst(rst),
@@ -298,7 +419,8 @@ dac #(
 
 
 dac #(
-    .WORDLENGTH(MODULATOR_WORDLENGTH)
+    .WORDLENGTH(MODULATOR_WORDLENGTH),
+    .ORDER(MODULATOR_ORDER)
 ) dac_right (
     .clk(mclk),
     .rst(rst),

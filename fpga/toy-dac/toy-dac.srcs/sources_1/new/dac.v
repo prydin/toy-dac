@@ -47,9 +47,8 @@ assign din_held_debug = din_held;
 // Input TPDF dither: two uniform PRNG values summed → triangular PDF.
 // Peak = ±2^DITHER_BITS added at input scale. Keep DITHER_BITS small
 // (8-16) to avoid raising the in-band noise floor.
-localparam DITHER_BITS = 16;
-wire signed [DITHER_BITS:0] dither_tpdf =
-    $signed(dither1[DITHER_BITS-1:0]) + $signed(dither2[DITHER_BITS-1:0]);
+localparam DITHER_BITS = 24;
+wire signed [DITHER_BITS:0] dither_tpdf = $signed(dither1[DITHER_BITS-1:0]) + $signed(dither2[DITHER_BITS-1:0]);
 
 integer k;
 integer j;
