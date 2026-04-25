@@ -38,14 +38,15 @@
 // INC_ADJ limit of ±2^19 (=524288) gives ±~6.6 kHz of correction,
 // far more than needed for typical clock drift (< 100 ppm = 4.4 Hz).
 
-module asrc_tick #(
+module nco #(
     parameter integer FIFO_DEPTH        = 64,
     parameter integer SETPOINT          = FIFO_DEPTH/2,
     parameter integer MCLK_HZ           = 54_000_000,
-    parameter integer UPDATE_HZ         = 100,
+    parameter integer UPDATE_HZ         = 10,
     parameter [31:0]  INC_NOMINAL       = 32'd3_507_557,   // 44.1 kHz @ 54 MHz
     parameter integer KP                = 32,
     parameter integer KI                = 4,
+    parameter integer ERR_DEADBAND      = 1,            // ignore |err| <= this
     parameter signed [31:0] INC_ADJ_MAX =  32'sd524288,
     parameter signed [31:0] INC_ADJ_MIN = -32'sd524288
 )(
@@ -54,11 +55,13 @@ module asrc_tick #(
     input  wire                              enable,        // pause servo when low
     input  wire [$clog2(FIFO_DEPTH+1)-1:0]   fifo_count,
     output reg                               tick = 1'b0,
+    output reg                               tick_x100 = 1'b0,  // exactly 100x the input rate
 
     // Debug
     output wire signed [15:0]                dbg_error,
     output wire signed [31:0]                dbg_inc_adj,
-    output wire        [31:0]                dbg_inc_eff
+    output wire        [31:0]                dbg_inc_eff,
+    output reg                               adjust = 1'b0  // 1-cycle pulse when pi_out changes
 );
 
     // ── Prime gate ────────────────────────────────────────────────
@@ -122,6 +125,28 @@ module asrc_tick #(
         end
     end
 
+    // ── 100× NCO (rate-locked to input NCO) ─────────────────────────
+    // Drives the DAC's per-sample update at exactly 100× the input
+    // sample rate, so post-interpolator samples come out evenly
+    // spaced (instead of in 1100-cycle bursts followed by 124-cycle
+    // gaps, which produce 44.1 kHz IM products).
+    //
+    // Same architecture, accumulator advances by 100 × inc_eff per
+    // mclk. Max increment ≈ 100 × 4 M = 400 M, well within 32 bits.
+    reg  [31:0] acc100 = 32'd0;
+    wire [38:0] inc_eff_x100 = inc_eff * 7'd100;
+    wire [32:0] acc100_next  = {1'b0, acc100} + {1'b0, inc_eff_x100[31:0]};
+
+    always @(posedge clk) begin
+        if (rst || !primed) begin
+            acc100    <= 32'd0;
+            tick_x100 <= 1'b0;
+        end else begin
+            acc100    <= acc100_next[31:0];
+            tick_x100 <= acc100_next[32];
+        end
+    end
+
     // ── PI servo (runs at UPDATE_HZ) ────────────────────────────────
     localparam integer UPDATE_DIV = MCLK_HZ / UPDATE_HZ;
     localparam integer DIV_W      = $clog2(UPDATE_DIV);
@@ -129,7 +154,15 @@ module asrc_tick #(
     wire upd_tick = (upd_cnt == UPDATE_DIV - 1);
 
     // Error in samples (sign-extended)
-    wire signed [15:0] err = $signed({1'b0, fifo_count}) - $signed(SETPOINT[15:0]);
+    wire signed [15:0] err_raw = $signed({1'b0, fifo_count}) - $signed(SETPOINT[15:0]);
+
+    // Deadband: zero out small errors so synchronizer / quantization
+    // noise on fifo_count (typically ±1 LSB) doesn't drive pi_out
+    // every update. Real drift integrates past the deadband within
+    // seconds, so tracking is unaffected.
+    wire signed [15:0] err = (err_raw >  $signed(ERR_DEADBAND[15:0])) ? err_raw :
+                             (err_raw < -$signed(ERR_DEADBAND[15:0])) ? err_raw :
+                             16'sd0;
 
     // Integrator step: integ += KI × err, with clamp
     wire signed [47:0] integ_n_raw = integ + ($signed(KI[15:0]) * err);
@@ -151,17 +184,21 @@ module asrc_tick #(
             upd_cnt <= 0;
             integ   <= 32'sd0;
             pi_out  <= 32'sd0;
+            adjust  <= 1'b0;
         end else if (!primed) begin
             // While re-priming, reset the PI state so we start the
             // next NCO run from the nominal increment.
             upd_cnt <= 0;
             integ   <= 32'sd0;
             pi_out  <= 32'sd0;
+            adjust  <= 1'b0;
         end else begin
             upd_cnt <= upd_tick ? {DIV_W{1'b0}} : upd_cnt + 1'b1;
+            adjust  <= 1'b0;
             if (upd_tick && enable) begin
                 integ  <= integ_n;
                 pi_out <= pi_n;
+                adjust <= (pi_n != pi_out);
             end
         end
     end

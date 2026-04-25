@@ -13,7 +13,8 @@ module top(
     input wire din,        // I2S serial data in
     input wire [1:0] btn,     // Push buttons
     output wire [3:0] led,    // LEDs for mode and dither indication
-    output wire [3:0] fifo_led // Thermometer indicator of FIFO fill (pio16-19)
+    output wire [3:0] fifo_led, // Thermometer indicator of FIFO fill (pio16-19)
+    output wire led0_b        // RGB LED blue channel — blinks on each ASRC adjust
 );
 
 
@@ -41,7 +42,7 @@ wire output_ready_right;
 // ── Clock ────────────────────────────────────────────────────────
 // Single MMCM driven from the 12 MHz crystal produces the 54 MHz
 // mclk. Everything (DAC pipeline, FIR, I2S receiver, FIFO, ASRC NCO)
-// runs on mclk — rate matching is purely digital via asrc_tick.
+// runs on mclk — rate matching is purely digital via the asrc module.
 wire mclk;
 wire mclk_locked;
 
@@ -50,8 +51,8 @@ wire mclk_locked;
 // PLL startup and accumulate corrupt state they never recover from.
 wire rst = ~mclk_locked;
 
-// Phase-shift port left tied off — the digital ASRC (asrc_tick) does
-// the rate matching, so mclk is held at its nominal frequency.
+// Phase-shift port left tied off — the digital ASRC does the rate
+// matching, so mclk is held at its nominal frequency.
 wire ps_done_unused;
 
 // Explicit input buffer. The MMCM IP is configured with "No buffer"
@@ -113,7 +114,7 @@ assign led = {dither_en, mclk_locked, mode};
 
 // Debug pins — ASRC servo state.
 assign debug1 = mclk_locked;          // PLL locked?
-assign debug2 = 1'b0;                 // (was src_locked)
+//assign debug2 = asrc_adjust;          // 1-cycle pulse per pi_out change
 assign debug3 = asrc_tick_l;          // sample tick — should be ~44.1 kHz
 assign debug4 = ~fifo_empty_l;        // anything in the FIFO?
 
@@ -139,7 +140,7 @@ clock main_clock (
 // ── I2S input ────────────────────────────────────────────────────
 // Runs on mclk. Its AXI-stream output feeds the FIFO, which acts
 // as an elastic buffer between I2S writes (paced by the upstream
-// source's bclk/lrclk) and asrc_tick-paced reads.
+// source's bclk/lrclk) and the NCO-paced reads inside asrc.
 wire fifo_full_l;
 wire fifo_full_r;
 
@@ -163,61 +164,38 @@ i2s #(
     .right_ready(~fifo_full_r)
 );
 
-// ── FIFOs: elastic buffer between I2S writes and asrc_tick reads ─
-// Both ports clocked on mclk. (The fifo module is async-capable but
-// degenerates to plain synchronous behavior when wr_clk == rd_clk.)
+// ── Digital ASRC ────────────────────────────────────────────────
+// The asrc module wraps:
+//   - input FIFOs  (elastic buffer between bclk-paced I2S writes
+//                   and NCO-paced reads)
+//   - nco          (NCO + PI rate servo, plus a phase-locked 100×
+//                   tick that paces the post-interpolator output)
+//   - tick-driven  pop-and-hold + AXI-stream presentation
+//   - output FIFOs (rate-leveling between the interpolator's bursty
+//                   output and the uniformly-spaced DAC consumption)
+//
+// The interpolator stays external because it's a Xilinx IP block.
+// The asrc module presents an AXI-stream loop around it.
 localparam integer FIFO_DEPTH = 64;
 localparam integer FIFO_CW    = $clog2(FIFO_DEPTH+1);
 
-wire signed [I2S_WORDLENGTH-1:0] fifo_dout_l;
-wire signed [I2S_WORDLENGTH-1:0] fifo_dout_r;
-wire fifo_empty_l;
-wire fifo_empty_r;
 wire [FIFO_CW-1:0] fifo_rd_count_l;
-wire [FIFO_CW-1:0] fifo_rd_count_r;
-wire fifo_rd_en_l;
-wire fifo_rd_en_r;
-
-fifo #(
-    .WIDTH(I2S_WORDLENGTH),
-    .DEPTH(FIFO_DEPTH)
-) fifo_l (
-    .wr_clk(mclk),
-    .wr_rst(rst),
-    .wr_data(i2s_left),
-    .wr_en(left_valid & ~fifo_full_l),
-    .full(fifo_full_l),
-    .wr_count(),
-    .rd_clk(mclk),
-    .rd_rst(rst),
-    .rd_data(fifo_dout_l),
-    .rd_en(fifo_rd_en_l),
-    .empty(fifo_empty_l),
-    .rd_count(fifo_rd_count_l)
-);
-
-fifo #(
-    .WIDTH(I2S_WORDLENGTH),
-    .DEPTH(FIFO_DEPTH)
-) fifo_r (
-    .wr_clk(mclk),
-    .wr_rst(rst),
-    .wr_data(i2s_right),
-    .wr_en(right_valid & ~fifo_full_r),
-    .full(fifo_full_r),
-    .wr_count(),
-    .rd_clk(mclk),
-    .rd_rst(rst),
-    .rd_data(fifo_dout_r),
-    .rd_en(fifo_rd_en_r),
-    .empty(fifo_empty_r),
-    .rd_count(fifo_rd_count_r)
-);
-
-// ── Digital ASRC: NCO + PI servo paces FIFO reads to track input rate ─
+wire fifo_empty_l;
 wire asrc_tick_l;
+wire asrc_adjust;
 wire signed [15:0] asrc_dbg_error;
 wire signed [31:0] asrc_dbg_inc_adj;
+
+// AXI-stream loop through the external interpolator.
+wire signed [I2S_WORDLENGTH-1:0] i2s_src_left;
+wire signed [I2S_WORDLENGTH-1:0] i2s_src_right;
+wire i2s_src_valid_l;
+wire i2s_src_valid_r;
+
+wire signed [I2S_WORDLENGTH-1:0] dac_in_left_paced;
+wire signed [I2S_WORDLENGTH-1:0] dac_in_right_paced;
+wire dac_dv_left;
+wire dac_dv_right;
 
 // Run the servo whenever we're in I2S mode. We deliberately do NOT
 // gate on a non-zero fifo_count: when the FIFO is empty, the negative
@@ -225,21 +203,73 @@ wire signed [31:0] asrc_dbg_inc_adj;
 // the NCO and let depth recover.
 wire asrc_enable = (mode == MODE_I2S);
 
-asrc_tick #(
-    .FIFO_DEPTH (FIFO_DEPTH),
-    .SETPOINT   (FIFO_DEPTH/2),
-    .MCLK_HZ    (54_000_000),
-    .INC_NOMINAL(32'd3_507_557)   // 44.1 kHz @ 54 MHz mclk
-) asrc (
-    .clk        (mclk),
-    .rst        (rst),
-    .enable     (asrc_enable),
-    .fifo_count (fifo_rd_count_l),
-    .tick       (asrc_tick_l),
-    .dbg_error  (asrc_dbg_error),
-    .dbg_inc_adj(asrc_dbg_inc_adj),
-    .dbg_inc_eff()
+asrc #(
+    .WIDTH         (I2S_WORDLENGTH),
+    .FIFO_DEPTH    (FIFO_DEPTH),
+    .OUT_FIFO_DEPTH(64),
+    .MCLK_HZ       (54_000_000),
+    .INC_NOMINAL   (32'd3_507_557)   // 44.1 kHz @ 54 MHz mclk
+) asrc_inst (
+    .clk              (mclk),
+    .rst              (rst),
+    .enable           (asrc_enable),
+
+    .i2s_left         (i2s_left),
+    .i2s_right        (i2s_right),
+    .left_valid       (left_valid),
+    .right_valid      (right_valid),
+    .fifo_full_l      (fifo_full_l),
+    .fifo_full_r      (fifo_full_r),
+
+    .src_left         (i2s_src_left),
+    .src_right        (i2s_src_right),
+    .src_valid_left   (i2s_src_valid_l),
+    .src_valid_right  (i2s_src_valid_r),
+    .src_ready_left   (output_ready_left),
+    .src_ready_right  (output_ready_right),
+
+    .interp_left      (dac_in_left),
+    .interp_right     (dac_in_right),
+    .interp_valid_left (dac_dv_left_raw),
+    .interp_valid_right(dac_dv_right_raw),
+
+    .dac_left         (dac_in_left_paced),
+    .dac_right        (dac_in_right_paced),
+    .dac_dv_left      (dac_dv_left),
+    .dac_dv_right     (dac_dv_right),
+
+    .fifo_count       (fifo_rd_count_l),
+    .fifo_empty_l     (fifo_empty_l),
+    .tick             (asrc_tick_l),
+    .adjust           (asrc_adjust),
+    .dbg_error        (asrc_dbg_error),
+    .dbg_inc_adj      (asrc_dbg_inc_adj)
 );
+
+// Flash the blue LED on each ASRC adjust — this lets us visually confirm that
+mono_ff #(
+    .FCLK(54_000_000),
+    .DELAY(50_000_000), // 50 ms delay
+    .RESETTABLE(1'b0)
+) asrc_adjust_sync_inst (
+    .clk(mclk),
+    .rst(rst),
+    .d(asrc_adjust),
+    .q(led0_b) // Blink the blue LED on each ASRC adjust
+);
+
+// Also route the ASRC adjust pulse to a debug pin for oscilloscope viewing. Stretch it to 1 ms so it's easier to see on the scope.
+mono_ff #(
+    .FCLK(54_000_000),
+    .DELAY(1_000_000), // 1 ms delay
+    .RESETTABLE(1'b0)
+) asrc_adjust_sync_scope_inst (
+    .clk(mclk),
+    .rst(rst),
+    .d(asrc_adjust),
+    .q(debug2) // Blink the blue LED on each ASRC adjust
+);
+
 
 
 // ── Internal DDS test tone (1 kHz sine) ──
@@ -313,49 +343,17 @@ always @(*) begin
             src_valid_left  = test_valid;
             src_valid_right = test_valid;
         end
-        default: begin // MODE_I2S — samples are paced by asrc_tick
-            src_left        = i2s_held_l;
-            src_right       = i2s_held_r;
-            src_valid_left  = i2s_valid_l;
-            src_valid_right = i2s_valid_r;
+        default: begin // MODE_I2S — samples are paced by the asrc module
+            src_left        = i2s_src_left;
+            src_right       = i2s_src_right;
+            src_valid_left  = i2s_src_valid_l;
+            src_valid_right = i2s_src_valid_r;
         end
     endcase
 end
 
-// ── Tick-driven FIFO pop and AXI-stream presentation ─────────────
-// On each ASRC tick: pop one sample from each FIFO into a holding
-// register and assert tvalid. tvalid stays high until the interpolator
-// accepts the sample. The interpolator's tready is asserted ~99.9%
-// of the time (it idles between input bursts), so the handshake
-// completes within a few mclk cycles of each tick.
-reg signed [I2S_WORDLENGTH-1:0] i2s_held_l = 0;
-reg signed [I2S_WORDLENGTH-1:0] i2s_held_r = 0;
-reg                              i2s_valid_l = 0;
-reg                              i2s_valid_r = 0;
-
-always @(posedge mclk) begin
-    if (rst || mode != MODE_I2S) begin
-        i2s_valid_l <= 1'b0;
-        i2s_valid_r <= 1'b0;
-    end else begin
-        // Clear valid when interpolator accepts.
-        if (i2s_valid_l && output_ready_left)  i2s_valid_l <= 1'b0;
-        if (i2s_valid_r && output_ready_right) i2s_valid_r <= 1'b0;
-        // Pop on tick. If the FIFO is empty (underrun), repeat the
-        // last held sample — audible glitch but no protocol break.
-        if (asrc_tick_l) begin
-            if (!fifo_empty_l) i2s_held_l <= fifo_dout_l;
-            if (!fifo_empty_r) i2s_held_r <= fifo_dout_r;
-            i2s_valid_l <= 1'b1;
-            i2s_valid_r <= 1'b1;
-        end
-    end
-end
-
-// FIFO read enables: pop exactly when the tick fires (and FIFO has
-// data). In test modes the FIFO is left untouched.
-assign fifo_rd_en_l = (mode == MODE_I2S) & asrc_tick_l & ~fifo_empty_l;
-assign fifo_rd_en_r = (mode == MODE_I2S) & asrc_tick_l & ~fifo_empty_r;
+// (Tick-driven FIFO pop and AXI-stream presentation now live inside
+// the asrc module.)
 
 // ── Diagnostic: track the high-water mark of fifo_rd_count_l ────
 // The thermometer was instantaneous and might have been missed by
@@ -427,8 +425,13 @@ interpolator100x #(
 // ── DAC input mux: interpolator output or direct DDS bypass ──
 wire signed [I2S_WORDLENGTH-1:0] dac_in_left  = BYPASS_INTERPOLATOR ? src_left  : filtered_left;
 wire signed [I2S_WORDLENGTH-1:0] dac_in_right = BYPASS_INTERPOLATOR ? src_right : filtered_right;
-wire dac_dv_left  = BYPASS_INTERPOLATOR ? src_valid_left  : filtered_valid_left;
-wire dac_dv_right = BYPASS_INTERPOLATOR ? src_valid_right : filtered_valid_right;
+wire dac_dv_left_raw  = BYPASS_INTERPOLATOR ? src_valid_left  : filtered_valid_left;
+wire dac_dv_right_raw = BYPASS_INTERPOLATOR ? src_valid_right : filtered_valid_right;
+
+// (Output rate-leveling FIFOs now live inside the asrc module.
+// dac_in_left/right + dac_dv_*_raw are wired to asrc.interp_*; the
+// asrc module exposes dac_in_left_paced / dac_dv_left etc. for the
+// DAC instances below.)
 
 wire [31:0] dither1_raw;
 wire [31:0] dither2_raw;
@@ -466,7 +469,7 @@ dac #(
 ) dac_left (
     .clk(mclk),
     .rst(rst),
-    .din(dac_in_left), 
+    .din(dac_in_left_paced), 
     .dvalid(dac_dv_left),
     .dither1(dither1),
     .dither2(dither2),
@@ -481,7 +484,7 @@ dac #(
 ) dac_right (
     .clk(mclk),
     .rst(rst),
-    .din(dac_in_right), 
+    .din(dac_in_right_paced), 
     .dvalid(dac_dv_right),
     .dither1(dither1),
     .dither2(dither2),

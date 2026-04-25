@@ -12,7 +12,7 @@ set_property -dict {PACKAGE_PIN D2 IOSTANDARD LVCMOS33} [get_ports {btn[0]}]
 set_property -dict {PACKAGE_PIN D1 IOSTANDARD LVCMOS33} [get_ports {btn[1]}]
 
 ## RGB LEDs
-#set_property -dict { PACKAGE_PIN F1    IOSTANDARD LVCMOS33 } [get_ports { led0_b }]; #IO_L10N_T1_34 Sch=led0_b
+set_property -dict {PACKAGE_PIN F1 IOSTANDARD LVCMOS33} [get_ports led0_b]
 #set_property -dict { PACKAGE_PIN D3    IOSTANDARD LVCMOS33 } [get_ports { led0_g }]; #IO_L9N_T1_DQS_34 Sch=led0_g
 #set_property -dict { PACKAGE_PIN F2    IOSTANDARD LVCMOS33 } [get_ports { led0_r }]; #IO_L10P_T1_34 Sch=led0_r
 
@@ -80,7 +80,7 @@ set_property -dict {PACKAGE_PIN N15 IOSTANDARD LVCMOS33} [get_ports {fifo_led[3]
 
 # General purpose debug pins
 set_property -dict {PACKAGE_PIN B1 IOSTANDARD LVCMOS33} [get_ports debug1]
-set_property -dict {PACKAGE_PIN C1 IOSTANDARD LVCMOS33} [get_ports debug2]
+set_property -dict {PACKAGE_PIN N1 IOSTANDARD LVCMOS33} [get_ports debug2]
 set_property -dict {PACKAGE_PIN B3 IOSTANDARD LVCMOS33} [get_ports debug3]
 set_property -dict {PACKAGE_PIN B4 IOSTANDARD LVCMOS33} [get_ports debug4]
 
