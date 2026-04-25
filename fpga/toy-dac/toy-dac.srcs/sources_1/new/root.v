@@ -38,32 +38,24 @@ wire right_valid;
 wire output_ready_left;
 wire output_ready_right;
 
-// ── Clock domains ────────────────────────────────────────────────
-// Two MMCMs, both fed from the 12 MHz crystal:
-//   sink domain (mclk):  phase-shifted by soft_pll, drives DAC pipeline
-//   source domain (clk_src/clk44k): rock-stable, drives I2S receiver
-//                                   and FIFO write side
-// The FIFO is the only path between the two domains.
+// ── Clock ────────────────────────────────────────────────────────
+// Single MMCM driven from the 12 MHz crystal produces the 54 MHz
+// mclk. Everything (DAC pipeline, FIR, I2S receiver, FIFO, ASRC NCO)
+// runs on mclk — rate matching is purely digital via asrc_tick.
 wire mclk;
 wire mclk_locked;
-wire clk_src;
-wire src_locked;
-wire all_locked = mclk_locked & src_locked;
 
-// Hold everything in reset until both PLLs lock and clocks are stable.
-// Without this, the DAC/FIR run on a glitching clock during PLL startup
-// and accumulate corrupt state they never recover from.
-wire rst     = ~all_locked;   // sink (mclk) reset
-wire src_rst = ~all_locked;   // source (clk_src) reset
+// Hold everything in reset until the PLL locks and the clock is
+// stable. Without this, the DAC/FIR run on a glitching clock during
+// PLL startup and accumulate corrupt state they never recover from.
+wire rst = ~mclk_locked;
 
 // Phase-shift port left tied off — the digital ASRC (asrc_tick) does
-// the rate matching now, so mclk is held at its nominal frequency.
+// the rate matching, so mclk is held at its nominal frequency.
 wire ps_done_unused;
 
-// Single shared input buffer for the crystal pin. Both MMCMs are
-// configured with "No buffer" on their input so they can share this
-// one IBUFG (otherwise each tries to place its own IBUFG on the same
-// pin and placement fails).
+// Explicit input buffer. The MMCM IP is configured with "No buffer"
+// on its input, so we instantiate the IBUF here.
 wire clk_ibuf;
 IBUF clk_ibuf_inst (.I(clk), .O(clk_ibuf));
 
@@ -116,12 +108,12 @@ always @(posedge mclk) begin
     end
 end
 
-// LEDs: [1:0] = mode, [2] = src_locked, [3] = dither enabled
-assign led = {dither_en, src_locked, mode};
+// LEDs: [1:0] = mode, [2] = mclk_locked, [3] = dither enabled
+assign led = {dither_en, mclk_locked, mode};
 
 // Debug pins — ASRC servo state.
-assign debug1 = mclk_locked;          // sink PLL locked?
-assign debug2 = src_locked;           // source PLL locked?
+assign debug1 = mclk_locked;          // PLL locked?
+assign debug2 = 1'b0;                 // (was src_locked)
 assign debug3 = asrc_tick_l;          // sample tick — should be ~44.1 kHz
 assign debug4 = ~fifo_empty_l;        // anything in the FIFO?
 
@@ -144,31 +136,18 @@ clock main_clock (
     .psdone(ps_done_unused)
 );
 
-// ── Source-domain clock (stable, never phase-shifted) ────────────
-// Two outputs available (clk44k, clk48k) for future sample-rate
-// switching; using clk44k for the 44.1 kHz hierarchy.
-wire clk48k_unused;
-src_clk source_clock (
-    .clk44k(clk_src),
-    .clk48k(clk48k_unused),
-    .reset(1'b0),
-    .locked(src_locked),
-    .clk_in1(clk_ibuf)
-);
-
-
-// ── I2S input (source domain) ────────────────────────────────────
-// Lives entirely in the stable clk_src domain. Its AXI-stream output
-// feeds the FIFO write side; the FIFO bridges to the sink (mclk)
-// domain where everything else lives.
+// ── I2S input ────────────────────────────────────────────────────
+// Runs on mclk. Its AXI-stream output feeds the FIFO, which acts
+// as an elastic buffer between I2S writes (paced by the upstream
+// source's bclk/lrclk) and asrc_tick-paced reads.
 wire fifo_full_l;
 wire fifo_full_r;
 
 i2s #(
     .WORDLENGTH(I2S_WORDLENGTH)
 ) i2s_inst (
-    .clk(clk_src),
-    .rst(src_rst),
+    .clk(mclk),
+    .rst(rst),
     .bclk(bclk),
     .lrclk(lrclk),
     .din(din),
@@ -184,7 +163,9 @@ i2s #(
     .right_ready(~fifo_full_r)
 );
 
-// ── Async FIFOs: clk_src → mclk, one per channel ─────────────────
+// ── FIFOs: elastic buffer between I2S writes and asrc_tick reads ─
+// Both ports clocked on mclk. (The fifo module is async-capable but
+// degenerates to plain synchronous behavior when wr_clk == rd_clk.)
 localparam integer FIFO_DEPTH = 64;
 localparam integer FIFO_CW    = $clog2(FIFO_DEPTH+1);
 
@@ -201,8 +182,8 @@ fifo #(
     .WIDTH(I2S_WORDLENGTH),
     .DEPTH(FIFO_DEPTH)
 ) fifo_l (
-    .wr_clk(clk_src),
-    .wr_rst(src_rst),
+    .wr_clk(mclk),
+    .wr_rst(rst),
     .wr_data(i2s_left),
     .wr_en(left_valid & ~fifo_full_l),
     .full(fifo_full_l),
@@ -219,8 +200,8 @@ fifo #(
     .WIDTH(I2S_WORDLENGTH),
     .DEPTH(FIFO_DEPTH)
 ) fifo_r (
-    .wr_clk(clk_src),
-    .wr_rst(src_rst),
+    .wr_clk(mclk),
+    .wr_rst(rst),
     .wr_data(i2s_right),
     .wr_en(right_valid & ~fifo_full_r),
     .full(fifo_full_r),

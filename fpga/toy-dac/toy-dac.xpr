@@ -362,6 +362,7 @@
     <FileSet Name="src_clk" Type="BlockSrcs" RelSrcDir="$PSRCDIR/src_clk" RelGenDir="$PGENDIR/src_clk">
       <File Path="$PSRCDIR/sources_1/ip/src_clk/src_clk.xci">
         <FileInfo>
+          <Attr Name="AutoDisabled" Val="1"/>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
