@@ -5,7 +5,7 @@
 
 ## 12 MHz System Clock
 set_property -dict {PACKAGE_PIN M9 IOSTANDARD LVCMOS33} [get_ports clk]
-# create_clock -period 83.330 -name sys_clk_pin -waveform {0.000 41.660} [get_ports clk]
+create_clock -period 83.330 -name sys_clk_pin -waveform {0.000 41.660} [get_ports clk]
 
 ## Push Buttons
 set_property -dict {PACKAGE_PIN D2 IOSTANDARD LVCMOS33} [get_ports {btn[0]}]
@@ -56,10 +56,10 @@ set_property -dict {PACKAGE_PIN M3 IOSTANDARD LVCMOS33} [get_ports din]
 #set_property -dict {PACKAGE_PIN N3 IOSTANDARD LVCMOS33} [get_ports pio7]
 #set_property -dict {PACKAGE_PIN P1 IOSTANDARD LVCMOS33} [get_ports pio8]
 #set_property -dict {PACKAGE_PIN N1 IOSTANDARD LVCMOS33} [get_ports pio9]
-#set_property -dict {PACKAGE_PIN P14 IOSTANDARD LVCMOS33} [get_ports pio16]
-#set_property -dict {PACKAGE_PIN P15 IOSTANDARD LVCMOS33} [get_ports pio17]
-#set_property -dict {PACKAGE_PIN N13 IOSTANDARD LVCMOS33} [get_ports pio18]
-#set_property -dict {PACKAGE_PIN N15 IOSTANDARD LVCMOS33} [get_ports pio19]
+set_property -dict {PACKAGE_PIN P14 IOSTANDARD LVCMOS33} [get_ports {fifo_led[0]}]
+set_property -dict {PACKAGE_PIN P15 IOSTANDARD LVCMOS33} [get_ports {fifo_led[1]}]
+set_property -dict {PACKAGE_PIN N13 IOSTANDARD LVCMOS33} [get_ports {fifo_led[2]}]
+set_property -dict {PACKAGE_PIN N15 IOSTANDARD LVCMOS33} [get_ports {fifo_led[3]}]
 #set_property -dict {PACKAGE_PIN N14 IOSTANDARD LVCMOS33} [get_ports pio20]
 #set_property -dict {PACKAGE_PIN M15 IOSTANDARD LVCMOS33} [get_ports pio21]
 #set_property -dict { PACKAGE_PIN M14   IOSTANDARD LVCMOS33 } [get_ports { pio22 }]; #IO_L9P_T1_DQS_14 Sch=pio[22]

@@ -12,7 +12,8 @@ module top(
     input wire lrclk,       // I2S left-right clock
     input wire din,        // I2S serial data in
     input wire [1:0] btn,     // Push buttons
-    output wire [3:0] led     // LEDs for mode and dither indication
+    output wire [3:0] led,    // LEDs for mode and dither indication
+    output wire [3:0] fifo_led // Thermometer indicator of FIFO fill (pio16-19)
 );
 
 
@@ -55,10 +56,9 @@ wire all_locked = mclk_locked & src_locked;
 wire rst     = ~all_locked;   // sink (mclk) reset
 wire src_rst = ~all_locked;   // source (clk_src) reset
 
-// soft_pll → MMCM dynamic phase-shift port
-wire ps_en;
-wire ps_incdec;
-wire ps_done;
+// Phase-shift port left tied off — the digital ASRC (asrc_tick) does
+// the rate matching now, so mclk is held at its nominal frequency.
+wire ps_done_unused;
 
 // Single shared input buffer for the crystal pin. Both MMCMs are
 // configured with "No buffer" on their input so they can share this
@@ -116,15 +116,17 @@ always @(posedge mclk) begin
     end
 end
 
-// LEDs: [1:0] = mode (00 = I2S, 01 = DDS, 10 = DC), [3] = dither enabled
-assign led = {dither_en, 1'b0, mode};
+// LEDs: [1:0] = mode, [2] = src_locked, [3] = dither enabled
+assign led = {dither_en, src_locked, mode};
 
-// Debug connections – verify interpolator is producing output
+// Debug pins — ASRC servo state.
+assign debug1 = mclk_locked;          // sink PLL locked?
+assign debug2 = src_locked;           // source PLL locked?
+assign debug3 = asrc_tick_l;          // sample tick — should be ~44.1 kHz
+assign debug4 = ~fifo_empty_l;        // anything in the FIFO?
+
 wire signed [MODULATOR_WORDLENGTH-1:0] dac_held_left;
-assign debug1 = filtered_valid_left;  // Interpolator output valid – should burst 100 pulses per input
-assign debug2 = src_valid_left;       // Input valid to interpolator
-assign debug3 = output_ready_left;    // Interpolator tready (high when idle)
-assign debug4 = filtered_left[31];    // Interpolator output sign bit
+wire signed [MODULATOR_WORDLENGTH-1:0] dac_held_right;
 
 // ── Sink-domain clock (phase-shifted by soft_pll) ────────────────
 // 54 MHz mclk with dynamic phase shift enabled. psclk is tied to mclk
@@ -137,9 +139,9 @@ clock main_clock (
     .locked(mclk_locked),       // output locked
     .clk_in1(clk_ibuf),         // input ref clock (shared IBUFG output)
     .psclk(mclk),               // PS port clocked by mclk
-    .psen(ps_en),               // pulse from soft_pll
-    .psincdec(ps_incdec),       // direction from soft_pll
-    .psdone(ps_done)            // back to soft_pll
+    .psen(1'b0),                // ASRC handles rate matching, no PS pulses
+    .psincdec(1'b0),
+    .psdone(ps_done_unused)
 );
 
 // ── Source-domain clock (stable, never phase-shifted) ────────────
@@ -231,21 +233,31 @@ fifo #(
     .rd_count(fifo_rd_count_r)
 );
 
-// ── Soft-PLL: nudges mclk so that fifo fill stays at SETPOINT ────
-// Only meaningful when actually running I2S; held in reset in test
-// modes (otherwise the loop would saturate one way and stay there).
-wire soft_pll_rst = rst | (mode != MODE_I2S);
+// ── Digital ASRC: NCO + PI servo paces FIFO reads to track input rate ─
+wire asrc_tick_l;
+wire signed [15:0] asrc_dbg_error;
+wire signed [31:0] asrc_dbg_inc_adj;
 
-soft_pll #(
-    .FIFO_DEPTH(FIFO_DEPTH),
-    .MCLK_HZ   (54_000_000)
-) soft_pll_inst (
-    .mclk      (mclk),
-    .rst       (soft_pll_rst),
-    .fifo_count(fifo_rd_count_l),  // L and R fill in lockstep
-    .psen      (ps_en),
-    .psincdec  (ps_incdec),
-    .psdone    (ps_done)
+// Run the servo whenever we're in I2S mode. We deliberately do NOT
+// gate on a non-zero fifo_count: when the FIFO is empty, the negative
+// error is exactly what should be ramping the integrator down to slow
+// the NCO and let depth recover.
+wire asrc_enable = (mode == MODE_I2S);
+
+asrc_tick #(
+    .FIFO_DEPTH (FIFO_DEPTH),
+    .SETPOINT   (FIFO_DEPTH/2),
+    .MCLK_HZ    (54_000_000),
+    .INC_NOMINAL(32'd3_507_557)   // 44.1 kHz @ 54 MHz mclk
+) asrc (
+    .clk        (mclk),
+    .rst        (rst),
+    .enable     (asrc_enable),
+    .fifo_count (fifo_rd_count_l),
+    .tick       (asrc_tick_l),
+    .dbg_error  (asrc_dbg_error),
+    .dbg_inc_adj(asrc_dbg_inc_adj),
+    .dbg_inc_eff()
 );
 
 
@@ -320,20 +332,86 @@ always @(*) begin
             src_valid_left  = test_valid;
             src_valid_right = test_valid;
         end
-        default: begin // MODE_I2S — pull samples from the FIFO (sink side)
-            src_left        = fifo_dout_l;
-            src_right       = fifo_dout_r;
-            src_valid_left  = ~fifo_empty_l;
-            src_valid_right = ~fifo_empty_r;
+        default: begin // MODE_I2S — samples are paced by asrc_tick
+            src_left        = i2s_held_l;
+            src_right       = i2s_held_r;
+            src_valid_left  = i2s_valid_l;
+            src_valid_right = i2s_valid_r;
         end
     endcase
 end
 
-// FIFO read enables: pop a sample only when the interpolator accepts
-// one in I2S mode. In test modes the FIFO is left untouched (it will
-// fill and the i2s receiver will stall — that's fine for test signals).
-assign fifo_rd_en_l = (mode == MODE_I2S) & ~fifo_empty_l & output_ready_left;
-assign fifo_rd_en_r = (mode == MODE_I2S) & ~fifo_empty_r & output_ready_right;
+// ── Tick-driven FIFO pop and AXI-stream presentation ─────────────
+// On each ASRC tick: pop one sample from each FIFO into a holding
+// register and assert tvalid. tvalid stays high until the interpolator
+// accepts the sample. The interpolator's tready is asserted ~99.9%
+// of the time (it idles between input bursts), so the handshake
+// completes within a few mclk cycles of each tick.
+reg signed [I2S_WORDLENGTH-1:0] i2s_held_l = 0;
+reg signed [I2S_WORDLENGTH-1:0] i2s_held_r = 0;
+reg                              i2s_valid_l = 0;
+reg                              i2s_valid_r = 0;
+
+always @(posedge mclk) begin
+    if (rst || mode != MODE_I2S) begin
+        i2s_valid_l <= 1'b0;
+        i2s_valid_r <= 1'b0;
+    end else begin
+        // Clear valid when interpolator accepts.
+        if (i2s_valid_l && output_ready_left)  i2s_valid_l <= 1'b0;
+        if (i2s_valid_r && output_ready_right) i2s_valid_r <= 1'b0;
+        // Pop on tick. If the FIFO is empty (underrun), repeat the
+        // last held sample — audible glitch but no protocol break.
+        if (asrc_tick_l) begin
+            if (!fifo_empty_l) i2s_held_l <= fifo_dout_l;
+            if (!fifo_empty_r) i2s_held_r <= fifo_dout_r;
+            i2s_valid_l <= 1'b1;
+            i2s_valid_r <= 1'b1;
+        end
+    end
+end
+
+// FIFO read enables: pop exactly when the tick fires (and FIFO has
+// data). In test modes the FIFO is left untouched.
+assign fifo_rd_en_l = (mode == MODE_I2S) & asrc_tick_l & ~fifo_empty_l;
+assign fifo_rd_en_r = (mode == MODE_I2S) & asrc_tick_l & ~fifo_empty_r;
+
+// ── Diagnostic: track the high-water mark of fifo_rd_count_l ────
+// The thermometer was instantaneous and might have been missed by
+// the eye. This holds the maximum observed count, refreshed once a
+// second so we can see if the FIFO ever fills meaningfully. Each
+// LED bit corresponds to a count threshold of >=8, >=16, >=32, >=48.
+reg [FIFO_CW-1:0] count_max     = 0;
+reg [FIFO_CW-1:0] count_max_lat = 0;
+reg [25:0]        max_refresh   = 0;   // ~1.2 s at 54 MHz
+always @(posedge mclk) begin
+    if (rst) begin
+        count_max     <= 0;
+        count_max_lat <= 0;
+        max_refresh   <= 0;
+    end else begin
+        if (fifo_rd_count_l > count_max)
+            count_max <= fifo_rd_count_l;
+        max_refresh <= max_refresh + 1'b1;
+        if (max_refresh == 26'd0) begin
+            count_max_lat <= count_max;
+            count_max     <= 0;
+        end
+    end
+end
+
+reg [3:0] fifo_led_r = 4'b0000;
+always @(posedge mclk) begin
+    if (rst) begin
+        fifo_led_r <= 4'b1010;  // visible startup pattern
+    end else begin
+        fifo_led_r[0] <= (count_max_lat >= 7'd8);
+        fifo_led_r[1] <= (count_max_lat >= 7'd16);
+        fifo_led_r[2] <= (count_max_lat >= 7'd32);
+        fifo_led_r[3] <= (count_max_lat >= 7'd48);
+    end
+end
+assign fifo_led = fifo_led_r;
 
 
 wire filtered_valid_left;
@@ -398,8 +476,6 @@ wire [31:0] dither2 = dither_en ? dither2_raw : 32'd0;
 
 
 // The DAC itself
-wire signed [MODULATOR_WORDLENGTH-1:0] dac_held_right;
-
 wire dac_raw_l;
 wire dac_raw_r;
 
