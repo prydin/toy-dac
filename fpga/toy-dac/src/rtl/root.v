@@ -14,7 +14,11 @@ module top(
     input wire [1:0] btn,     // Push buttons
     output wire [3:0] led,    // LEDs for mode and dither indication
     output wire [3:0] fifo_led, // Thermometer indicator of FIFO fill (pio16-19)
-    output wire led0_b        // RGB LED blue channel — blinks on each ASRC adjust
+    output wire led0_b,        // RGB LED blue channel — blinks on each ASRC adjust
+    // A/B test bypass: when HIGH, I2S samples go directly to the interpolator,
+    // skipping the ASRC FIFO and NCO. Pulled LOW on the PCB so the ASRC path
+    // is active by default when the pin is left unconnected.
+    input wire bypass
 );
 
 
@@ -144,6 +148,9 @@ clock main_clock (
 wire fifo_full_l;
 wire fifo_full_r;
 
+// LRCLK edge pulse — used by rate_detect to measure the incoming sample rate.
+wire lrclk_pos_edge;
+
 i2s #(
     .WORDLENGTH(I2S_WORDLENGTH)
 ) i2s_inst (
@@ -161,7 +168,13 @@ i2s #(
     // (If we get here, the soft_pll loop has lost lock or hasn't
     // converged yet; the I2S receiver simply stalls.)
     .left_ready(~fifo_full_l),
-    .right_ready(~fifo_full_r)
+    .right_ready(~fifo_full_r),
+    .clean_bclk(),
+    .clean_lrclk(),
+    .bclk_neg_edge(),
+    .bclk_pos_edge(),
+    .lrclk_neg_edge(),
+    .lrclk_pos_edge(lrclk_pos_edge)
 );
 
 // ── Digital ASRC ────────────────────────────────────────────────
@@ -178,6 +191,50 @@ i2s #(
 // The asrc module presents an AXI-stream loop around it.
 localparam integer FIFO_DEPTH = 64;
 localparam integer FIFO_CW    = $clog2(FIFO_DEPTH+1);
+
+// ── Sample-rate detection ────────────────────────────────────────
+// Use rate_detect to measure the period of the incoming LRCLK in
+// mclk cycles, then select the matching NCO increment so the PI
+// servo only needs to correct for residual jitter/drift rather than
+// the full frequency offset between 44.1 kHz and 48 kHz.
+//
+// Expected LRCLK periods at 54 MHz mclk:
+//   44.1 kHz → 1224 cycles   INC_NOMINAL = 3_507_557
+//   48.0 kHz → 1125 cycles   INC_NOMINAL = 3_817_748
+// Discrimination threshold: 1175 (midpoint, well clear of both rates).
+localparam [31:0] INC_44100      = 32'd3_507_557;
+localparam [31:0] INC_48000      = 32'd3_817_748;
+localparam [15:0] RATE_THRESHOLD = 16'd1175;
+
+wire        rate_valid;
+wire [15:0] lrclk_period;
+
+rate_detect #(
+    .WINDOW_SIZE(256)
+) rate_det_inst (
+    .clk           (mclk),
+    .rst           (rst),
+    .lrclk_pos_edge(lrclk_pos_edge),
+    .dvalid        (1'b1),
+    .rate_valid    (rate_valid),
+    .window_period (),
+    .period        (lrclk_period)
+);
+
+// Latch the selected INC_NOMINAL on every rate_detect measurement.
+// Defaults to 44.1 kHz so the NCO starts at a known rate after reset.
+reg [31:0] inc_nominal_sel = INC_44100;
+
+always @(posedge mclk) begin
+    if (rst) begin
+        inc_nominal_sel <= INC_44100;
+    end else if (rate_valid) begin
+        if (lrclk_period < RATE_THRESHOLD)
+            inc_nominal_sel <= INC_48000;
+        else
+            inc_nominal_sel <= INC_44100;
+    end
+end
 
 wire [FIFO_CW-1:0] fifo_rd_count_l;
 wire fifo_empty_l;
@@ -197,22 +254,22 @@ wire signed [I2S_WORDLENGTH-1:0] dac_in_right_paced;
 wire dac_dv_left;
 wire dac_dv_right;
 
-// Run the servo whenever we're in I2S mode. We deliberately do NOT
-// gate on a non-zero fifo_count: when the FIFO is empty, the negative
-// error is exactly what should be ramping the integrator down to slow
-// the NCO and let depth recover.
-wire asrc_enable = (mode == MODE_I2S);
+// Run the servo whenever we're in I2S mode AND not bypassed.
+// When bypass is high, samples flow directly from I2S to the interpolator
+// without the ASRC FIFO / NCO, so the servo must be disabled.
+wire asrc_enable = (mode == MODE_I2S) && !bypass;
 
 asrc #(
     .WIDTH         (I2S_WORDLENGTH),
     .FIFO_DEPTH    (FIFO_DEPTH),
     .OUT_FIFO_DEPTH(64),
     .MCLK_HZ       (54_000_000),
-    .INC_NOMINAL   (32'd3_507_557)   // 44.1 kHz @ 54 MHz mclk
+    .INC_NOMINAL   (32'd3_507_557)   // 44.1 kHz @ 54 MHz mclk (overridden at runtime)
 ) asrc_inst (
     .clk              (mclk),
     .rst              (rst),
     .enable           (asrc_enable),
+    .inc_nominal_in   (inc_nominal_sel),
 
     .i2s_left         (i2s_left),
     .i2s_right        (i2s_right),
@@ -343,11 +400,21 @@ always @(*) begin
             src_valid_left  = test_valid;
             src_valid_right = test_valid;
         end
-        default: begin // MODE_I2S — samples are paced by the asrc module
-            src_left        = i2s_src_left;
-            src_right       = i2s_src_right;
-            src_valid_left  = i2s_src_valid_l;
-            src_valid_right = i2s_src_valid_r;
+        default: begin // MODE_I2S
+            if (bypass) begin
+                // Direct I2S passthrough: bypass the ASRC FIFO/NCO and feed
+                // raw I2S samples straight into the interpolator.
+                src_left        = i2s_left;
+                src_right       = i2s_right;
+                src_valid_left  = left_valid;
+                src_valid_right = right_valid;
+            end else begin
+                // Normal ASRC path: samples are paced by the NCO-rate servo.
+                src_left        = i2s_src_left;
+                src_right       = i2s_src_right;
+                src_valid_left  = i2s_src_valid_l;
+                src_valid_right = i2s_src_valid_r;
+            end
         end
     endcase
 end
@@ -433,6 +500,15 @@ wire dac_dv_right_raw = BYPASS_INTERPOLATOR ? src_valid_right : filtered_valid_r
 // asrc module exposes dac_in_left_paced / dac_dv_left etc. for the
 // DAC instances below.)
 
+// ── Final DAC input mux: ASRC-paced path vs bypass ──────────────
+// In bypass mode the ASRC output FIFO is unused; take filtered_left/right
+// directly from the interpolator so the DAC receives samples at I2S timing
+// without any ASRC buffering.
+wire signed [I2S_WORDLENGTH-1:0] dac_in_left_final  = bypass ? filtered_left  : dac_in_left_paced;
+wire signed [I2S_WORDLENGTH-1:0] dac_in_right_final = bypass ? filtered_right : dac_in_right_paced;
+wire dac_dv_left_final  = bypass ? filtered_valid_left  : dac_dv_left;
+wire dac_dv_right_final = bypass ? filtered_valid_right : dac_dv_right;
+
 wire [31:0] dither1_raw;
 wire [31:0] dither2_raw;
 
@@ -469,8 +545,8 @@ dac #(
 ) dac_left (
     .clk(mclk),
     .rst(rst),
-    .din(dac_in_left_paced), 
-    .dvalid(dac_dv_left),
+    .din(dac_in_left_final), 
+    .dvalid(dac_dv_left_final),
     .dither1(dither1),
     .dither2(dither2),
     .dout(dac_raw_l),
@@ -484,8 +560,8 @@ dac #(
 ) dac_right (
     .clk(mclk),
     .rst(rst),
-    .din(dac_in_right_paced), 
-    .dvalid(dac_dv_right),
+    .din(dac_in_right_final), 
+    .dvalid(dac_dv_right_final),
     .dither1(dither1),
     .dither2(dither2),
     .dout(dac_raw_r),

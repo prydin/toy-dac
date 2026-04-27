@@ -41,6 +41,10 @@ module asrc #(
     input  wire                    rst,
     input  wire                    enable,         // gates servo + held-valid
 
+    // Runtime sample-rate override — forwarded to the internal NCO.
+    // 0 = use INC_NOMINAL parameter (backward compatible default).
+    input  wire [31:0]             inc_nominal_in,
+
     // ── I2S input side ──
     input  wire signed [WIDTH-1:0] i2s_left,
     input  wire signed [WIDTH-1:0] i2s_right,
@@ -145,16 +149,17 @@ module asrc #(
         .MCLK_HZ    (MCLK_HZ),
         .INC_NOMINAL(INC_NOMINAL)
     ) nco_inst (
-        .clk        (clk),
-        .rst        (rst),
-        .enable     (enable),
-        .fifo_count (fifo_rd_count_l),
-        .tick       (nco_tick),
-        .tick_x100  (nco_tick_x100),
-        .dbg_error  (dbg_error),
-        .dbg_inc_adj(dbg_inc_adj),
-        .dbg_inc_eff(),
-        .adjust     (adjust)
+        .clk          (clk),
+        .rst          (rst),
+        .enable       (enable),
+        .fifo_count   (fifo_rd_count_l),
+        .inc_nominal_in(inc_nominal_in),
+        .tick         (nco_tick),
+        .tick_x100    (nco_tick_x100),
+        .dbg_error    (dbg_error),
+        .dbg_inc_adj  (dbg_inc_adj),
+        .dbg_inc_eff  (),
+        .adjust       (adjust)
     );
 
     assign tick = nco_tick;

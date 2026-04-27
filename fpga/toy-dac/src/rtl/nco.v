@@ -54,6 +54,10 @@ module nco #(
     input  wire                              rst,
     input  wire                              enable,        // pause servo when low
     input  wire [$clog2(FIFO_DEPTH+1)-1:0]   fifo_count,
+    // Runtime sample-rate override. When non-zero, overrides the INC_NOMINAL
+    // parameter so the NCO can track either 44.1 kHz or 48 kHz without
+    // re-synthesising the bitstream.  0 = use INC_NOMINAL parameter.
+    input  wire [31:0]                       inc_nominal_in,
     output reg                               tick = 1'b0,
     output reg                               tick_x100 = 1'b0,  // exactly 100x the input rate
 
@@ -102,6 +106,12 @@ module nco #(
         end
     end
 
+    // ── Effective nominal increment (runtime or parameter) ──────────
+    // When inc_nominal_in is non-zero it takes precedence over the
+    // INC_NOMINAL synthesis parameter, enabling run-time rate switching
+    // between (e.g.) 44.1 kHz and 48 kHz without re-building the design.
+    wire [31:0] inc_nom = (inc_nominal_in != 32'd0) ? inc_nominal_in : INC_NOMINAL;
+
     // ── NCO ─────────────────────────────────────────────────────────
     reg  [31:0] acc = 32'd0;
 
@@ -110,7 +120,7 @@ module nco #(
     reg  signed [31:0] pi_out = 32'sd0;   // I + P, refreshed each update
 
     // Effective NCO increment
-    wire signed [32:0] inc_eff_s = $signed({1'b0, INC_NOMINAL}) + pi_out;
+    wire signed [32:0] inc_eff_s = $signed({1'b0, inc_nom}) + pi_out;
     wire        [31:0] inc_eff   = inc_eff_s[31:0];
 
     wire        [32:0] acc_next  = {1'b0, acc} + {1'b0, inc_eff};
