@@ -169,11 +169,6 @@ i2s #(
     // converged yet; the I2S receiver simply stalls.)
     .left_ready(~fifo_full_l),
     .right_ready(~fifo_full_r),
-    .clean_bclk(),
-    .clean_lrclk(),
-    .bclk_neg_edge(),
-    .bclk_pos_edge(),
-    .lrclk_neg_edge(),
     .lrclk_pos_edge(lrclk_pos_edge)
 );
 
@@ -215,9 +210,12 @@ rate_detect #(
     .clk           (mclk),
     .rst           (rst),
     .lrclk_pos_edge(lrclk_pos_edge),
+    // Assert continuously: rate detection runs regardless of whether the
+    // ASRC servo is active so that the correct INC_NOMINAL is already
+    // selected when the servo enables.
     .dvalid        (1'b1),
     .rate_valid    (rate_valid),
-    .window_period (),
+    .window_period (), // unused — period (average) is sufficient
     .period        (lrclk_period)
 );
 
