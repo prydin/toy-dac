@@ -34,12 +34,12 @@ module asrc #(
     parameter integer WIDTH          = 32,
     parameter integer FIFO_DEPTH     = 64,
     parameter integer OUT_FIFO_DEPTH = 64,
-    parameter integer MCLK_HZ        = 54_000_000
+    parameter integer MCLK_HZ        = 54_000_000,
+    parameter [31:0]  INC_NOMINAL    = 32'd3_507_557   // 44.1 kHz @ 54 MHz mclk
 ) (
     input  wire                    clk,
     input  wire                    rst,
     input  wire                    enable,         // gates servo + held-valid
-    input  wire [31:0]             inc_nominal,    // nominal NCO increment (runtime)
 
     // ── I2S input side ──
     input  wire signed [WIDTH-1:0] i2s_left,
@@ -142,12 +142,12 @@ module asrc #(
     nco #(
         .FIFO_DEPTH (FIFO_DEPTH),
         .SETPOINT   (FIFO_DEPTH/2),
-        .MCLK_HZ    (MCLK_HZ)
+        .MCLK_HZ    (MCLK_HZ),
+        .INC_NOMINAL(INC_NOMINAL)
     ) nco_inst (
         .clk        (clk),
         .rst        (rst),
         .enable     (enable),
-        .inc_nominal(inc_nominal),
         .fifo_count (fifo_rd_count_l),
         .tick       (nco_tick),
         .tick_x100  (nco_tick_x100),

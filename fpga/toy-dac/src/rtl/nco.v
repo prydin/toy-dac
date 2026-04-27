@@ -43,6 +43,7 @@ module nco #(
     parameter integer SETPOINT          = FIFO_DEPTH/2,
     parameter integer MCLK_HZ           = 54_000_000,
     parameter integer UPDATE_HZ         = 10,
+    parameter [31:0]  INC_NOMINAL       = 32'd3_507_557,   // 44.1 kHz @ 54 MHz
     parameter integer KP                = 32,
     parameter integer KI                = 4,
     parameter integer ERR_DEADBAND      = 1,            // ignore |err| <= this
@@ -52,7 +53,6 @@ module nco #(
     input  wire                              clk,
     input  wire                              rst,
     input  wire                              enable,        // pause servo when low
-    input  wire [31:0]                       inc_nominal,   // nominal NCO increment (runtime)
     input  wire [$clog2(FIFO_DEPTH+1)-1:0]   fifo_count,
     output reg                               tick = 1'b0,
     output reg                               tick_x100 = 1'b0,  // exactly 100x the input rate
@@ -110,45 +110,10 @@ module nco #(
     reg  signed [31:0] pi_out = 32'sd0;   // I + P, refreshed each update
 
     // Effective NCO increment
-    wire signed [32:0] inc_eff_s = $signed({1'b0, inc_nominal}) + pi_out;
+    wire signed [32:0] inc_eff_s = $signed({1'b0, INC_NOMINAL}) + pi_out;
     wire        [31:0] inc_eff   = inc_eff_s[31:0];
 
-    // ── LSB dither ──────────────────────────────────────────────────
-    // Without dither, the accumulator's tick pattern is exactly
-    // periodic (period = 2^32 / gcd(2^32, inc_eff) cycles), so the
-    // tick-period jitter shows up as discrete spurs near DC. Adding
-    // a small random value to acc each cycle randomizes the carry-
-    // out timing without changing the long-term average rate. The
-    // total jitter energy is unchanged (still ~18 ns peak-to-peak)
-    // but is now spectrally white instead of being concentrated in
-    // a few audible spurs/skirts.
-    //
-    // 32-bit Galois LFSR (taps for x^32 + x^22 + x^2 + x + 1, max
-    // length, period = 2^32 - 1). One LFSR per accumulator so the
-    // 1× and 100× tick patterns are decorrelated.
-    reg [31:0] dither_lfsr1 = 32'hACE1_BEEF;
-    reg [31:0] dither_lfsr2 = 32'h1234_5678;
-    wire dith1_fb = dither_lfsr1[0] ^ dither_lfsr1[1] ^ dither_lfsr1[21] ^ dither_lfsr1[31];
-    wire dith2_fb = dither_lfsr2[0] ^ dither_lfsr2[1] ^ dither_lfsr2[21] ^ dither_lfsr2[31];
-    always @(posedge clk) begin
-        if (rst) begin
-            dither_lfsr1 <= 32'hACE1_BEEF;
-            dither_lfsr2 <= 32'h1234_5678;
-        end else begin
-            dither_lfsr1 <= {dith1_fb, dither_lfsr1[31:1]};
-            dither_lfsr2 <= {dith2_fb, dither_lfsr2[31:1]};
-        end
-    end
-
-    // Use 12 LSBs of each LFSR. Dither amplitude (~4096 LSB of acc)
-    // is ~1 ppm of inc_eff at 48 kHz, so the worst-case tick-period
-    // perturbation is ~1 mclk cycle (which is the quantization grid
-    // anyway). Larger than ~16 bits would start moving multiple
-    // ticks at once — overkill and could colour the noise.
-    wire [31:0] dith1 = {20'd0, dither_lfsr1[11:0]};
-    wire [31:0] dith2 = {20'd0, dither_lfsr2[11:0]};
-
-    wire        [32:0] acc_next  = {1'b0, acc} + {1'b0, inc_eff} + {1'b0, dith1};
+    wire        [32:0] acc_next  = {1'b0, acc} + {1'b0, inc_eff};
 
     always @(posedge clk) begin
         if (rst || !primed) begin
@@ -162,7 +127,7 @@ module nco #(
 
     // ── 100× NCO (rate-locked to input NCO) ─────────────────────────
     // Drives the DAC's per-sample update at exactly 100× the input
-    // sample period, so post-interpolator samples come out evenly
+    // sample rate, so post-interpolator samples come out evenly
     // spaced (instead of in 1100-cycle bursts followed by 124-cycle
     // gaps, which produce 44.1 kHz IM products).
     //
@@ -170,7 +135,7 @@ module nco #(
     // mclk. Max increment ≈ 100 × 4 M = 400 M, well within 32 bits.
     reg  [31:0] acc100 = 32'd0;
     wire [38:0] inc_eff_x100 = inc_eff * 7'd100;
-    wire [32:0] acc100_next  = {1'b0, acc100} + {1'b0, inc_eff_x100[31:0]} + {1'b0, dith2};
+    wire [32:0] acc100_next  = {1'b0, acc100} + {1'b0, inc_eff_x100[31:0]};
 
     always @(posedge clk) begin
         if (rst || !primed) begin

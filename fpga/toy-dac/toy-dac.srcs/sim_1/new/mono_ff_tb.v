@@ -26,8 +26,12 @@ module mono_ff_tb;
 
     // Use a small DELAY so the simulation runs fast.
     localparam integer FCLK     = 54_000_000;
-    localparam integer DELAY_NS = 1_000;                 // 1 µs
-    localparam integer EXP_CYC  = (FCLK * DELAY_NS) / 1_000_000_000;  // = 54
+    localparam integer DELAY_NS = 0;                 // 1 µs
+    localparam integer DELAY_MS = 0;
+    localparam integer DELAY_US = 0;
+    localparam integer EXP_CYC  = DELAY_NS != 0 ? (FCLK * DELAY_NS) / 1_000_000_000 : 
+                                        DELAY_US != 0 ? (FCLK * DELAY_US) / 1_000_000 : 
+                                        DELAY_MS != 0 ? (FCLK * DELAY_MS) / 1_000 : 0;  // = 54
 
     localparam integer CLK_PERIOD_NS = 1_000_000_000 / FCLK;          // 18 ns nominal
 

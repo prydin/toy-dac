@@ -219,7 +219,7 @@ always @(posedge clk or posedge rst) begin
 
         // Quantize all stages (reads sigma values from previous cycle)
         for (k = 0; k < ORDER; k = k + 1)
-            q_bit[k] <= (sigma[k] > 0) ? 1'b1 : 1'b0;
+            q_bit[k] <= (sigma[k] >= 0) ? 1'b1 : 1'b0;
 
         // Final output is the last stage's quantizer
         dout <= q_bit[ORDER-1];

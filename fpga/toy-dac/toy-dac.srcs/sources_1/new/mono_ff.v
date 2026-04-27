@@ -4,7 +4,9 @@
 // Simple monostable flip-flop 
 module mono_ff #(
     parameter FCLK = 54_000_000,
-    parameter DELAY = 10_000_000, // Delay in ns for the flip-flop
+    parameter DELAY_MS = 0,
+    parameter DELAY_US = 0,
+    parameter DELAY_NS = 0,
     parameter RESETTABLE = 1'b0
 ) (
     input wire clk,
@@ -12,6 +14,8 @@ module mono_ff #(
     input wire d,
     output reg q
 );
+
+parameter integer EXP_CYC =  (FCLK * DELAY_NS) / 1_000_000_000 + (FCLK * DELAY_US) / 1_000_000 + (FCLK * DELAY_MS) / 1_000;  // Total delay in clock cycles
 
 reg [31:0] counter = 0;
 reg last_d = 0;
@@ -21,20 +25,16 @@ always @(posedge clk or posedge rst) begin
         counter <= 0;
         q <= 0;
         last_d <= 0;
+    end else if (d && ~last_d && (RESETTABLE || ~q)) begin
+        last_d <= d; // Update last_d to the new value
+        q <= 1; // Capture input after the specified delay
+        counter <= EXP_CYC;
+    end else if (counter == 0) begin
+        q <= 0; // Clear output after delay expires
     end else begin
-        // Always track previous d so edge detection works on every
-        // rising edge, not just the first one after reset.
-        last_d <= d;
-        if (d && ~last_d && (RESETTABLE || ~q)) begin
-            q <= 1;
-            counter <= (FCLK * DELAY) / 1_000_000_000;
-        end else if (counter == 0) begin
-            q <= 0;
-        end else begin
-            counter <= counter - 1;
-        end
-    end
+        counter <= counter - 1; // Decrement counter each clock cycle
+    end 
 end
-endmodule 
+endmodule
 
 `default_nettype wire
