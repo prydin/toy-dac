@@ -33,7 +33,8 @@
 //      UNLOCKED to repeat the sequence.
 
 module rate_manager #(
-    parameter integer MCLK_HZ          = 54_000_000,
+    parameter integer MCLK_HZ          = 108_000_000,
+    parameter integer FS_OUT_HZ        = 1_687_500,    // mclk / OUT_DIV (= 108 MHz / 64)
     parameter integer MATCHES_REQUIRED = 3,
     parameter integer SETTLE_MS        = 250
 )(
@@ -45,7 +46,8 @@ module rate_manager #(
     input  wire [15:0] period,        // mclk cycles per lrclk period
 
     // To ASRC / DAC
-    output reg  [31:0] inc_nominal = 32'd3_507_557,  // sane default = 44.1 kHz
+    output reg  [31:0] inc_nominal = 32'd3_507_557,  // legacy NCO step (kept alive)
+    output reg  [31:0] step_nominal = 32'd112_261_131, // fractional ASRC step (Q0.32 of Fs_in/Fs_out)
     output wire        asrc_rst,                     // driven by stretch counter below
     output reg         mute        = 1'b1,
     output reg         rate_locked = 1'b0,
@@ -60,12 +62,27 @@ module rate_manager #(
     localparam integer P_LOW_LIMIT  = MCLK_HZ / 30_000;
 
     // ── INC_NOMINAL lookup: round(2^32 × Fs / MCLK_HZ) ─────────────
+    // (Legacy: drives the old NCO-based asrc; kept alive during
+    // bring-up so the previous code path remains buildable.)
     localparam [31:0] INC_32K  =
         (((64'd1 << 32) * 32_000)  + (MCLK_HZ/2)) / MCLK_HZ;
     localparam [31:0] INC_44_1 =
         (((64'd1 << 32) * 44_100)  + (MCLK_HZ/2)) / MCLK_HZ;
     localparam [31:0] INC_48K  =
         (((64'd1 << 32) * 48_000)  + (MCLK_HZ/2)) / MCLK_HZ;
+
+    // ── STEP_NOMINAL lookup: round(2^32 × Fs_in / Fs_out) ──────────
+    // Fractional-phase ASRC step: how much of an input sample to
+    // advance per output strobe. For Fs_out = 1.6875 MHz:
+    //   44_100 / 1_687_500 * 2^32 ≈ 112_261_131
+    //   48_000 / 1_687_500 * 2^32 ≈ 122_175_407
+    //   32_000 / 1_687_500 * 2^32 ≈  81_450_271 (32k flagged unsupported)
+    localparam [31:0] STEP_32K =
+        (((64'd1 << 32) * 32_000) + (FS_OUT_HZ/2)) / FS_OUT_HZ;
+    localparam [31:0] STEP_44_1 =
+        (((64'd1 << 32) * 44_100) + (FS_OUT_HZ/2)) / FS_OUT_HZ;
+    localparam [31:0] STEP_48K =
+        (((64'd1 << 32) * 48_000) + (FS_OUT_HZ/2)) / FS_OUT_HZ;
 
     localparam [1:0] RC_32K = 2'd0;
     localparam [1:0] RC_44K = 2'd1;
@@ -105,6 +122,18 @@ module rate_manager #(
         end
     endfunction
 
+    function [31:0] step_for;
+        input [1:0] rc;
+        begin
+            case (rc)
+                RC_32K:  step_for = STEP_32K;
+                RC_44K:  step_for = STEP_44_1;
+                RC_48K:  step_for = STEP_48K;
+                default: step_for = STEP_44_1;
+            endcase
+        end
+    endfunction
+
     // ── Candidate tracking ─────────────────────────────────────────
     // After every rate_valid pulse, classify; if it matches the
     // running candidate, increment the match counter. If it doesn't
@@ -130,6 +159,7 @@ module rate_manager #(
     always @(posedge clk) begin
         if (rst) begin
             inc_nominal     <= INC_44_1;
+            step_nominal    <= STEP_44_1;
             mute            <= 1'b1;
             rate_locked     <= 1'b0;
             unsupported     <= 1'b0;
@@ -163,10 +193,11 @@ module rate_manager #(
                     mute        <= 1'b1;
                     rate_locked <= 1'b0;
                     if (confirmed) begin
-                        rate_code   <= candidate;
-                        inc_nominal <= inc_for(candidate);
-                        settle_cnt  <= SETTLE_CYCLES[SETTLE_W-1:0];
-                        state       <= S_SETTLE;
+                        rate_code    <= candidate;
+                        inc_nominal  <= inc_for(candidate);
+                        step_nominal <= step_for(candidate);
+                        settle_cnt   <= SETTLE_CYCLES[SETTLE_W-1:0];
+                        state        <= S_SETTLE;
                     end
                 end
 

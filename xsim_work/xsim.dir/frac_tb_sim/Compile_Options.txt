@@ -1,0 +1,1 @@
+-debug "typical" "fractional_asrc_tb" -s "frac_tb_sim" 

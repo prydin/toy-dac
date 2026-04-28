@@ -1,260 +1,212 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-// Asynchronous Sample-Rate Conversion wrapper.
+// Asynchronous Sample-Rate Conversion wrapper (fractional-phase).
 //
-// Wraps the entire digital ASRC datapath:
+// Architecture (replaces the older NCO + AXI-loop interpolator path):
 //
-//   I2S in ─► input FIFO ─► (NCO+PI servo paces reads)
-//                              │
-//                              ▼
-//                          src AXI-stream  ─►  [external interpolator] ─►
-//                                                                       │
-//                          ┌────────────────────────────────────────────┘
-//                          ▼
-//                       output FIFO ─► (NCO tick_x100 paces reads) ─► DAC
+//   I2S in ─► fractional_asrc L ─┐
+//                                ├─► dac_left / dac_right @ Fs_out
+//   I2S in ─► fractional_asrc R ─┘    (with dac_dvalid on a fixed
+//                                      mclk/OUT_DIV grid)
+//                ▲   ▲
+//                │   │ step (Q0.32)
+//                │   └── frac_servo (PI loop on samples_avail)
+//                │
+//                └── out_strobe (mclk/OUT_DIV counter)
 //
-// The interpolator is left external because it is a Xilinx IP block.
-// Everything else lives in here:
-//   - input FIFOs (left/right), elastic buffer between bclk-paced
-//     I2S writes and NCO-paced reads
-//   - nco instance: PI servo + 2 phase-locked NCOs (1× and 100×
-//     the input sample rate)
-//   - tick-driven pop-and-hold logic (presents AXI-stream to external
-//     interpolator)
-//   - output FIFOs (left/right), absorbs the interpolator's bursty
-//     output and drains uniformly at tick_x100
-//   - out_primed gate
+// Each `fractional_asrc` instance owns its own input ring buffer
+// (2*TAPS = 128 samples deep), polyphase ROM, MAC engine, and phase
+// accumulator. They share a single `step` value driven by `frac_servo`
+// and a common `out_strobe`, so L and R consume input samples in
+// lockstep and produce output samples on the same grid.
 //
-// Design intent: the only signals crossing the boundary are the I2S
-// stream in, the AXI-stream loop through the interpolator, the rate-
-// leveled DAC stream out, and a handful of diagnostics.
+// `frac_servo` measures the L engine's `samples_avail` (unconsumed
+// samples in the ring buffer) and adjusts `step` around the supplied
+// `step_nominal` to keep that depth at SAMP_SETPOINT. L and R have
+// identical input rates and identical step, so their `samples_avail`
+// trajectories match.
+//
+// What was removed from the old `asrc`:
+//   - `nco` instance (PI servo + dual NCO ticks)
+//   - `tick_x100` and the 100x output rate generator
+//   - `out_primed` gate
+//   - input FIFOs (the engine's internal ring buffer is the
+//     elasticity buffer)
+//   - external interpolator AXI loop (src_*/interp_*)
+//   - output rate-leveling FIFOs
+//
+// Bring-up note
+// ─────────────
+// This rewrite is the start of Phase 3. `root.v` is updated in
+// Phase 4 to match the new port set; until then this module will
+// not elaborate inside the existing project. Validate via the
+// dedicated stereo testbench instead.
 
 module asrc #(
-    parameter integer WIDTH          = 32,
-    parameter integer FIFO_DEPTH     = 64,
-    parameter integer OUT_FIFO_DEPTH = 64,
-    parameter integer MCLK_HZ        = 54_000_000
-) (
+    parameter integer WIDTH         = 32,
+    parameter integer COEFF_W       = 18,
+    parameter integer PHASES        = 256,
+    parameter integer TAPS          = 64,
+    parameter         COEFF_FILE    = "frac_asrc.mem",
+    parameter integer MCLK_HZ       = 108_000_000,
+    parameter integer OUT_DIV       = 64,                 // Fs_out = mclk / OUT_DIV
+    // PI servo target: depth of the engine's internal ring buffer.
+    // Safe operating range is [1, SAMP_DEPTH - TAPS] = [1, 64];
+    // mid-range is the natural setpoint.
+    parameter integer SAMP_SETPOINT = TAPS,        // mid-depth of 2*TAPS ring
+    // PI servo update rate. 100 Hz is fine in real hardware; bumping
+    // to 1000+ Hz makes simulation testbenches converge in ms.
+    parameter integer SERVO_UPDATE_HZ = 100,
+    // Default 44.1 kHz step constant (Q0.32) for Fs_out = 1.6875 MHz.
+    // round(44100 / 1687500 * 2^32) = 112_261_131.
+    parameter [31:0]  STEP_NOMINAL  = 32'd112_261_131
+)(
     input  wire                    clk,
     input  wire                    rst,
-    input  wire                    enable,         // gates servo + held-valid
-    input  wire [31:0]             inc_nominal,    // nominal NCO increment (runtime)
+    input  wire                    enable,
+
+    // Runtime nominal step (Q0.32). 0 means "use STEP_NOMINAL parameter".
+    input  wire [31:0]             step_nominal_in,
 
     // ── I2S input side ──
     input  wire signed [WIDTH-1:0] i2s_left,
     input  wire signed [WIDTH-1:0] i2s_right,
     input  wire                    left_valid,
     input  wire                    right_valid,
-    output wire                    fifo_full_l,    // for I2S backpressure
-    output wire                    fifo_full_r,
 
-    // ── AXI-stream out to external interpolator (source-paced) ──
-    output wire signed [WIDTH-1:0] src_left,
-    output wire signed [WIDTH-1:0] src_right,
-    output wire                    src_valid_left,
-    output wire                    src_valid_right,
-    input  wire                    src_ready_left,
-    input  wire                    src_ready_right,
-
-    // ── AXI-stream in from external interpolator ──
-    input  wire signed [WIDTH-1:0] interp_left,
-    input  wire signed [WIDTH-1:0] interp_right,
-    input  wire                    interp_valid_left,
-    input  wire                    interp_valid_right,
-
-    // ── Rate-leveled output to DAC (drained at tick_x100) ──
+    // ── DAC output (rate-leveled on mclk/OUT_DIV grid) ──
     output wire signed [WIDTH-1:0] dac_left,
     output wire signed [WIDTH-1:0] dac_right,
     output wire                    dac_dv_left,
     output wire                    dac_dv_right,
 
     // ── Diagnostics ──
-    output wire [$clog2(FIFO_DEPTH+1)-1:0] fifo_count,
-    output wire                    fifo_empty_l,
-    output wire                    tick,           // ~44.1 kHz sample tick
-    output wire                    adjust,         // 1-cycle pulse per PI update
-    output wire signed [15:0]      dbg_error,
-    output wire signed [31:0]      dbg_inc_adj
+    output wire        [15:0]      dbg_samples_avail_l,
+    output wire        [15:0]      dbg_samples_avail_r,
+    output wire                    in_consumed,            // L engine carry (== R)
+    output wire        [31:0]      dbg_step,
+    output wire signed [15:0]      dbg_servo_error,
+    output wire signed [31:0]      dbg_servo_step_adj,
+    output wire                    adjust                  // 1-cycle pulse on PI update
 );
 
-    localparam integer FIFO_CW     = $clog2(FIFO_DEPTH+1);
-    localparam integer OUT_FIFO_CW = $clog2(OUT_FIFO_DEPTH+1);
+    // ── Effective nominal step (runtime override) ───────────────
+    wire [31:0] step_nom_eff =
+        (step_nominal_in != 32'd0) ? step_nominal_in : STEP_NOMINAL;
 
-    // ── Input FIFOs ─────────────────────────────────────────────
-    // Both ports clocked on clk. The fifo module is async-capable
-    // but degenerates to plain synchronous behavior when wr_clk ==
-    // rd_clk.
-    wire signed [WIDTH-1:0] fifo_dout_l;
-    wire signed [WIDTH-1:0] fifo_dout_r;
-    wire                    fifo_empty_r;
-    wire [FIFO_CW-1:0]      fifo_rd_count_l;
-    wire [FIFO_CW-1:0]      fifo_rd_count_r;
-    wire                    fifo_rd_en_l;
-    wire                    fifo_rd_en_r;
-
-    fifo #(
-        .WIDTH(WIDTH),
-        .DEPTH(FIFO_DEPTH)
-    ) fifo_l (
-        .wr_clk(clk),
-        .wr_rst(rst),
-        .wr_data(i2s_left),
-        .wr_en(left_valid & ~fifo_full_l),
-        .full(fifo_full_l),
-        .wr_count(),
-        .rd_clk(clk),
-        .rd_rst(rst),
-        .rd_data(fifo_dout_l),
-        .rd_en(fifo_rd_en_l),
-        .empty(fifo_empty_l),
-        .rd_count(fifo_rd_count_l)
-    );
-
-    fifo #(
-        .WIDTH(WIDTH),
-        .DEPTH(FIFO_DEPTH)
-    ) fifo_r (
-        .wr_clk(clk),
-        .wr_rst(rst),
-        .wr_data(i2s_right),
-        .wr_en(right_valid & ~fifo_full_r),
-        .full(fifo_full_r),
-        .wr_count(),
-        .rd_clk(clk),
-        .rd_rst(rst),
-        .rd_data(fifo_dout_r),
-        .rd_en(fifo_rd_en_r),
-        .empty(fifo_empty_r),
-        .rd_count(fifo_rd_count_r)
-    );
-
-    assign fifo_count = fifo_rd_count_l;
-
-    // ── NCO + PI servo ──────────────────────────────────────────
-    // Run the servo whenever enable is high. We deliberately do NOT
-    // gate on a non-zero fifo_count: when the FIFO is empty, the
-    // negative error is exactly what should be ramping the integrator
-    // down to slow the NCO and let depth recover.
-    wire nco_tick;
-    wire nco_tick_x100;
-
-    nco #(
-        .FIFO_DEPTH (FIFO_DEPTH),
-        .SETPOINT   (FIFO_DEPTH/2),
-        .MCLK_HZ    (MCLK_HZ)
-    ) nco_inst (
-        .clk        (clk),
-        .rst        (rst),
-        .enable     (enable),
-        .inc_nominal(inc_nominal),
-        .fifo_count (fifo_rd_count_l),
-        .tick       (nco_tick),
-        .tick_x100  (nco_tick_x100),
-        .dbg_error  (dbg_error),
-        .dbg_inc_adj(dbg_inc_adj),
-        .dbg_inc_eff(),
-        .adjust     (adjust)
-    );
-
-    assign tick = nco_tick;
-
-    // ── Tick-driven FIFO pop and AXI-stream presentation ────────
-    // On each NCO tick: pop one sample from each input FIFO into a
-    // holding register and assert tvalid. tvalid stays high until
-    // the external interpolator accepts the sample (its tready is
-    // asserted ~99.9% of the time).
-    reg signed [WIDTH-1:0] held_l = 0;
-    reg signed [WIDTH-1:0] held_r = 0;
-    reg                    valid_l = 0;
-    reg                    valid_r = 0;
-
+    // ── Output strobe: 1-cycle pulse every OUT_DIV mclks ────────
+    localparam integer DIV_W = $clog2(OUT_DIV);
+    reg [DIV_W-1:0] out_div_cnt = {DIV_W{1'b0}};
+    reg             out_strobe  = 1'b0;
     always @(posedge clk) begin
-        if (rst || !enable) begin
-            valid_l <= 1'b0;
-            valid_r <= 1'b0;
+        if (rst) begin
+            out_div_cnt <= {DIV_W{1'b0}};
+            out_strobe  <= 1'b0;
+        end else if (out_div_cnt == OUT_DIV - 1) begin
+            out_div_cnt <= {DIV_W{1'b0}};
+            out_strobe  <= 1'b1;
         end else begin
-            // Clear valid when interpolator accepts.
-            if (valid_l && src_ready_left)  valid_l <= 1'b0;
-            if (valid_r && src_ready_right) valid_r <= 1'b0;
-            // Pop on tick. If the FIFO is empty (underrun), repeat
-            // the last held sample — audible glitch but no protocol
-            // break.
-            if (nco_tick) begin
-                if (!fifo_empty_l) held_l <= fifo_dout_l;
-                if (!fifo_empty_r) held_r <= fifo_dout_r;
-                valid_l <= 1'b1;
-                valid_r <= 1'b1;
-            end
+            out_div_cnt <= out_div_cnt + 1'b1;
+            out_strobe  <= 1'b0;
         end
     end
 
-    assign src_left        = held_l;
-    assign src_right       = held_r;
-    assign src_valid_left  = valid_l;
-    assign src_valid_right = valid_r;
+    // ── Frac servo (PI on L engine's ring-buffer depth) ─────────
+    wire [15:0] samp_avail_l;
+    wire [15:0] samp_avail_r;
+    wire [31:0] step_eff;
 
-    // FIFO read enables: pop exactly when the tick fires (and FIFO
-    // has data). When disabled (test modes upstream) the FIFO is
-    // left untouched.
-    assign fifo_rd_en_l = enable & nco_tick & ~fifo_empty_l;
-    assign fifo_rd_en_r = enable & nco_tick & ~fifo_empty_r;
+    // Servo only sees the low bits of samples_avail (it cannot exceed
+    // the ring-buffer depth SAMP_DEPTH = 2*TAPS in normal operation,
+    // but cap defensively so a transient overshoot can't garble the
+    // servo's error math).
+    localparam integer SAMP_DEPTH = 2 * TAPS;
+    wire [$clog2(SAMP_DEPTH+1)-1:0] samp_avail_clamped =
+        (samp_avail_l > SAMP_DEPTH[15:0]) ? SAMP_DEPTH[$clog2(SAMP_DEPTH+1)-1:0]
+                                          : samp_avail_l[$clog2(SAMP_DEPTH+1)-1:0];
 
-    // ── Output rate-leveling FIFOs ──────────────────────────────
-    // The interpolator emits 100 output samples in a tight ~1100-
-    // cycle burst, then idles ~124 cycles until the next input
-    // arrives. Without re-pacing, the DAC's din_held would hold each
-    // sample for a wildly uneven duration, generating 44.1 kHz IM
-    // products.
-    //
-    // These small FIFOs absorb the burst; the DAC consumes one
-    // sample per nco_tick_x100 (rate-locked to exactly 100× the
-    // input rate), so post-interpolator samples are uniformly
-    // spaced.
-    //
-    // Depth: max instantaneous backlog ≈ 100 × (1 − 1100/1224) ≈ 10
-    // samples. 64-deep gives wide margin for transient PI corrections.
-    wire signed [WIDTH-1:0] out_dout_l;
-    wire signed [WIDTH-1:0] out_dout_r;
-    wire                    out_empty_l, out_empty_r;
-    wire                    out_full_l,  out_full_r;
-    wire [OUT_FIFO_CW-1:0]  out_count_l, out_count_r;
-
-    // Prime: don't drain output FIFO until it has accumulated some
-    // samples, otherwise the very first tick_x100s will underrun
-    // before the interpolator pipeline has produced anything.
-    reg out_primed = 1'b0;
-    always @(posedge clk) begin
-        if (rst) out_primed <= 1'b0;
-        else if (out_count_l >= OUT_FIFO_DEPTH/2) out_primed <= 1'b1;
-        else if (out_empty_l) out_primed <= 1'b0;
-    end
-
-    wire out_rd_l = nco_tick_x100 & out_primed & ~out_empty_l;
-    wire out_rd_r = nco_tick_x100 & out_primed & ~out_empty_r;
-
-    fifo #(.WIDTH(WIDTH), .DEPTH(OUT_FIFO_DEPTH)) out_fifo_l (
-        .wr_clk(clk), .wr_rst(rst),
-        .wr_data(interp_left), .wr_en(interp_valid_left & ~out_full_l),
-        .full(out_full_l), .wr_count(),
-        .rd_clk(clk), .rd_rst(rst),
-        .rd_data(out_dout_l), .rd_en(out_rd_l),
-        .empty(out_empty_l), .rd_count(out_count_l)
+    frac_servo #(
+        .FIFO_DEPTH  (SAMP_DEPTH),
+        .SETPOINT    (SAMP_SETPOINT),
+        .MCLK_HZ     (MCLK_HZ),
+        .UPDATE_HZ   (SERVO_UPDATE_HZ)
+    ) servo_inst (
+        .clk             (clk),
+        .rst             (rst),
+        .enable          (enable),
+        .step_nominal_in (step_nom_eff),
+        .fifo_count      (samp_avail_clamped),
+        .step            (step_eff),
+        .dbg_error       (dbg_servo_error),
+        .dbg_step_adj    (dbg_servo_step_adj),
+        .adjust          (adjust)
     );
 
-    fifo #(.WIDTH(WIDTH), .DEPTH(OUT_FIFO_DEPTH)) out_fifo_r (
-        .wr_clk(clk), .wr_rst(rst),
-        .wr_data(interp_right), .wr_en(interp_valid_right & ~out_full_r),
-        .full(out_full_r), .wr_count(),
-        .rd_clk(clk), .rd_rst(rst),
-        .rd_data(out_dout_r), .rd_en(out_rd_r),
-        .empty(out_empty_r), .rd_count(out_count_r)
+    // ── Stereo fractional ASRC engines ──────────────────────────
+    // Both engines share `step` and `out_strobe`, so they consume
+    // input samples in lockstep. Each owns its own coefficient
+    // ROM (loaded from the same .mem file).
+    wire signed [WIDTH-1:0] dout_l;
+    wire signed [WIDTH-1:0] dout_r;
+    wire                    dvalid_l;
+    wire                    dvalid_r;
+    wire                    in_consumed_l;
+    wire                    in_consumed_r;
+
+    fractional_asrc #(
+        .DATA_W    (WIDTH),
+        .COEFF_W   (COEFF_W),
+        .PHASES    (PHASES),
+        .TAPS      (TAPS),
+        .COEFF_FILE(COEFF_FILE)
+    ) eng_l (
+        .clk              (clk),
+        .rst              (rst),
+        .enable           (enable),
+        .sample_in        (i2s_left),
+        .sample_valid     (left_valid),
+        .out_strobe       (out_strobe),
+        .step             (step_eff),
+        .data_out         (dout_l),
+        .dvalid_out       (dvalid_l),
+        .in_consumed      (in_consumed_l),
+        .dbg_phase_acc    (),
+        .dbg_mac_cyc      (),
+        .dbg_samples_avail(samp_avail_l)
     );
 
-    assign dac_left    = out_dout_l;
-    assign dac_right   = out_dout_r;
-    assign dac_dv_left  = out_rd_l;
-    assign dac_dv_right = out_rd_r;
+    fractional_asrc #(
+        .DATA_W    (WIDTH),
+        .COEFF_W   (COEFF_W),
+        .PHASES    (PHASES),
+        .TAPS      (TAPS),
+        .COEFF_FILE(COEFF_FILE)
+    ) eng_r (
+        .clk              (clk),
+        .rst              (rst),
+        .enable           (enable),
+        .sample_in        (i2s_right),
+        .sample_valid     (right_valid),
+        .out_strobe       (out_strobe),
+        .step             (step_eff),
+        .data_out         (dout_r),
+        .dvalid_out       (dvalid_r),
+        .in_consumed      (in_consumed_r),
+        .dbg_phase_acc    (),
+        .dbg_mac_cyc      (),
+        .dbg_samples_avail(samp_avail_r)
+    );
+
+    // ── Outputs ─────────────────────────────────────────────────
+    assign dac_left            = dout_l;
+    assign dac_right           = dout_r;
+    assign dac_dv_left         = dvalid_l;
+    assign dac_dv_right        = dvalid_r;
+    assign dbg_samples_avail_l = samp_avail_l;
+    assign dbg_samples_avail_r = samp_avail_r;
+    assign in_consumed         = in_consumed_l;
+    assign dbg_step            = step_eff;
 
 endmodule
 
