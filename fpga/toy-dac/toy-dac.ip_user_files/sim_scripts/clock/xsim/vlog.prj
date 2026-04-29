@@ -1,6 +1,6 @@
-verilog xil_defaultlib --include "../../../ipstatic" \
-"../../../../toy-dac.gen/sources_1/ip/clock/clock_clk_wiz.v" \
-"../../../../toy-dac.gen/sources_1/ip/clock/clock.v" \
+verilog xil_defaultlib --include "../../../../../toy-dac.gen/sources_1/ip/clock" \
+"../../../../../toy-dac.gen/sources_1/ip/clock/clock_clk_wiz.v" \
+"../../../../../toy-dac.gen/sources_1/ip/clock/clock.v" \
 
 verilog xil_defaultlib "glbl.v"
 

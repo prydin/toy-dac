@@ -1,0 +1,1 @@
+"dac_modulator_tb" -s "dac_sim_1" 

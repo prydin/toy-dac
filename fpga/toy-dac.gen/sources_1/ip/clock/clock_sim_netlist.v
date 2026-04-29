@@ -2,10 +2,9 @@
 // Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
 // --------------------------------------------------------------------------------
 // Tool Version: Vivado v.2024.2 (win64) Build 5239630 Fri Nov 08 22:35:27 MST 2024
-// Date        : Sat Apr 25 08:09:11 2026
+// Date        : Mon Apr 27 20:49:28 2026
 // Host        : da_beast running 64-bit major release  (build 9200)
-// Command     : write_verilog -force -mode funcsim -rename_top clock -prefix
-//               clock_ clock_sim_netlist.v
+// Command     : write_verilog -force -mode funcsim c:/proj/toy-dac/fpga/toy-dac.gen/sources_1/ip/clock/clock_sim_netlist.v
 // Design      : clock
 // Purpose     : This verilog netlist is a functional simulation representation of the design and should not be modified
 //               or synthesized. This netlist cannot be used for SDF annotated simulation.
@@ -41,7 +40,7 @@ module clock
   wire psincdec;
   wire reset;
 
-  clock_clock_clk_wiz inst
+  clock_clk_wiz inst
        (.clk_in1(clk_in1),
         .locked(locked),
         .mclk(mclk),
@@ -52,7 +51,7 @@ module clock
         .reset(reset));
 endmodule
 
-module clock_clock_clk_wiz
+module clock_clk_wiz
    (mclk,
     psclk,
     psen,
@@ -113,7 +112,7 @@ module clock_clock_clk_wiz
     .CLKFBOUT_USE_FINE_PS("FALSE"),
     .CLKIN1_PERIOD(83.333000),
     .CLKIN2_PERIOD(0.000000),
-    .CLKOUT0_DIVIDE_F(14.000000),
+    .CLKOUT0_DIVIDE_F(7.000000),
     .CLKOUT0_DUTY_CYCLE(0.500000),
     .CLKOUT0_PHASE(0.000000),
     .CLKOUT0_USE_FINE_PS("FALSE"),

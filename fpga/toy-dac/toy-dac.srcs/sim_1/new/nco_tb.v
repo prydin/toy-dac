@@ -126,7 +126,7 @@ module nco_tb;
         .clk        (clk),
         .rst        (rst),
         .enable     (1'b1),
-        .inc_nominal(INC_NOMINAL),
+        .inc_nominal_in(INC_NOMINAL),
         .fifo_count (fifo_count),
         .tick       (tick),
         .tick_x100  (tick_x100),

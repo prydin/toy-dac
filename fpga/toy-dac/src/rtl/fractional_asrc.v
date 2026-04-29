@@ -21,10 +21,17 @@
 //
 // Phase accumulator decode (assumes PHASES = 256):
 //   bits[31:24]  -> phase index `idx` (0..PHASES-1)
-//   bits[23:16]  -> blend factor alpha (Q0.8, 0..255)
-//   bits[15:0]   -> ignored (sub-alpha)
+//   bits[23: 8]  -> blend factor alpha (Q0.16, 0..65535)
+//   bits[ 7: 0]  -> ignored (sub-alpha)
 //
-// Per-tap blended coefficient: c_k = c_a[k] + ((c_b[k] - c_a[k]) * alpha) >>> 8
+// Per-tap blended coefficient (round-half-up):
+//   c_k = c_a[k] + (((c_b[k] - c_a[k]) * alpha) + 2^15) >>> 16
+//
+// Alpha was widened from 8 to 16 bits to push polyphase image-spurs
+// from ~-100 dBFS (set by 256x256 phase-grid quantisation) down
+// below -130 dBFS. The half-LSB-up rounding term removes the
+// signal-correlated truncation bias that the bare arithmetic shift
+// would inject, which otherwise shows up as low-level harmonics.
 //
 // Pipeline (overlapped MACs, single multiplier, single accumulator)
 // ----------------------------------------------------------------
@@ -93,6 +100,10 @@ module fractional_asrc #(
     localparam integer TAP_W        = $clog2(TAPS);
     localparam integer SAMP_DEPTH   = 2 * TAPS;
     localparam integer SAMP_W       = $clog2(SAMP_DEPTH);
+    // Prime-jump target for consumed_cnt. Lands samples_avail at
+    // SAMP_DEPTH/4 (= 32 for SAMP_DEPTH=128), the mid-safe-range
+    // matching the wrapper's SAMP_SETPOINT.
+    localparam integer PRIME_CONSUMED = SAMP_DEPTH - (SAMP_DEPTH/4);
     localparam integer COEFF_DEPTH  = (PHASES + 1) * TAPS;
     localparam integer COEFF_AW     = $clog2(COEFF_DEPTH);
     localparam integer PROD_W       = COEFF_W + DATA_W;
@@ -150,8 +161,22 @@ module fractional_asrc #(
     end
 
     wire [15:0] samples_avail = samples_in_cnt - consumed_cnt;
-    wire        launch_ok     = (samples_avail != 16'd0)
-                              && (samples_in_cnt >= TAPS);
+    // Startup priming. samp_mem is not zeroed on reset, so we must
+    // hold off MAC launches until the ring buffer is fully primed
+    // AND the convolution origin sits far enough into the buffer
+    // that the (TAPS-1) prior taps all read written slots, never
+    // stale BRAM.
+    //
+    // Construction: keep consumed_cnt = 0 while filling; once
+    // samples_in_cnt reaches SAMP_DEPTH (= 2*TAPS), jump consumed_cnt
+    // forward to TAPS in a single cycle (sequencer below). After the
+    // jump, samples_avail = SAMP_DEPTH - TAPS = TAPS, which equals
+    // the servo's mid-depth setpoint -- so the servo starts inside
+    // its deadband and audio comes up cleanly with no multi-second
+    // drain transient. The first launch reads slots TAPS, TAPS-1,
+    // ..., 1 (all written by the prime).
+    reg primed = 1'b0;
+    wire        launch_ok     = primed && (samples_avail != 16'd0);
 
     reg [SAMP_W-1:0]         samp_addr = {SAMP_W{1'b0}};
     reg signed [DATA_W-1:0]  samp_q    = {DATA_W{1'b0}};
@@ -174,7 +199,7 @@ module fractional_asrc #(
     reg               s0_active = 1'b0;
     reg [TAP_W-1:0]   s0_tap    = {TAP_W{1'b0}};
     reg [PHASE_W-1:0] s0_idx    = {PHASE_W{1'b0}};
-    reg [7:0]         s0_alpha  = 8'd0;
+    reg [15:0]        s0_alpha  = 16'd0;
     reg [SAMP_W-1:0]  s0_wbase  = {SAMP_W{1'b0}};
 
     // ----------------------------------------------------------------
@@ -184,8 +209,8 @@ module fractional_asrc #(
     // posedge is followed by the BRAM-read posedge (S2 -> S3), so by
     // the time s3_v rises the data on coeff_a_q / samp_q matches.
     // ----------------------------------------------------------------
-    reg s2_v = 1'b0, s2_first = 1'b0, s2_last = 1'b0; reg [7:0] s2_alpha = 8'd0;
-    reg s3_v = 1'b0, s3_first = 1'b0, s3_last = 1'b0; reg [7:0] s3_alpha = 8'd0;
+    reg s2_v = 1'b0, s2_first = 1'b0, s2_last = 1'b0; reg [15:0] s2_alpha = 16'd0;
+    reg s3_v = 1'b0, s3_first = 1'b0, s3_last = 1'b0; reg [15:0] s3_alpha = 16'd0;
     reg s4_v = 1'b0, s4_first = 1'b0, s4_last = 1'b0;
     reg s5_v = 1'b0, s5_first = 1'b0, s5_last = 1'b0;
     reg               s6_last  = 1'b0;
@@ -195,13 +220,21 @@ module fractional_asrc #(
     reg signed [PROD_W-1:0]  prod        = {PROD_W{1'b0}};
     reg signed [ACC_W-1:0]   acc         = {ACC_W{1'b0}};
 
-    // Combinational lerp at S3 (uses pipelined alpha s3_alpha)
+    // Combinational lerp at S3 (uses pipelined alpha s3_alpha).
+    // Alpha is unsigned Q0.16; widen to 17 bits with a leading sign
+    // zero so the multiply is signed-by-signed. Round-half-up on the
+    // 16-bit shift kills the truncation-bias harmonics.
     wire signed [COEFF_W:0] coeff_diff =
         $signed({coeff_b_q[COEFF_W-1], coeff_b_q})
       - $signed({coeff_a_q[COEFF_W-1], coeff_a_q});
-    wire signed [COEFF_W + 8 : 0] lerp_term  = coeff_diff * $signed({1'b0, s3_alpha});
-    wire signed [COEFF_W : 0]     blended    =
-        $signed({coeff_a_q[COEFF_W-1], coeff_a_q}) + (lerp_term >>> 8);
+    wire signed [COEFF_W + 16 : 0] lerp_term =
+        coeff_diff * $signed({1'b0, s3_alpha});
+    // Round-half-up: add 2^15 before the >>>16. Use an 18-bit signed
+    // positive literal so the sign-extension to (COEFF_W+17) bits is
+    // a simple zero-extend.
+    wire signed [COEFF_W + 16 : 0] lerp_rnd  = lerp_term + 18'sh08000;
+    wire signed [COEFF_W : 0]      blended   =
+        $signed({coeff_a_q[COEFF_W-1], coeff_a_q}) + (lerp_rnd >>> 16);
 
     // ----------------------------------------------------------------
     // Sequencer
@@ -211,16 +244,17 @@ module fractional_asrc #(
             phase_acc    <= 32'd0;
             phase_carry  <= 1'b0;
             consumed_cnt <= 16'd0;
+            primed       <= 1'b0;
             s0_active    <= 1'b0;
             s0_tap       <= {TAP_W{1'b0}};
             s0_idx       <= {PHASE_W{1'b0}};
-            s0_alpha     <= 8'd0;
+            s0_alpha     <= 16'd0;
             s0_wbase     <= {SAMP_W{1'b0}};
             coeff_addr_a <= {COEFF_AW{1'b0}};
             coeff_addr_b <= {COEFF_AW{1'b0}};
             samp_addr    <= {SAMP_W{1'b0}};
-            s2_v <= 1'b0; s2_first <= 1'b0; s2_last <= 1'b0; s2_alpha <= 8'd0;
-            s3_v <= 1'b0; s3_first <= 1'b0; s3_last <= 1'b0; s3_alpha <= 8'd0;
+            s2_v <= 1'b0; s2_first <= 1'b0; s2_last <= 1'b0; s2_alpha <= 16'd0;
+            s3_v <= 1'b0; s3_first <= 1'b0; s3_last <= 1'b0; s3_alpha <= 16'd0;
             s4_v <= 1'b0; s4_first <= 1'b0; s4_last <= 1'b0;
             s5_v <= 1'b0; s5_first <= 1'b0; s5_last <= 1'b0;
             s6_last      <= 1'b0;
@@ -233,6 +267,20 @@ module fractional_asrc #(
         end else begin
             phase_carry <= 1'b0;
             dvalid_out  <= 1'b0;
+
+            // ---- Prime gate: wait for full buffer, then jump
+            //      consumed_cnt forward so samples_avail starts in
+            //      the safe-range middle (SAMP_DEPTH/2 - SAMP_DEPTH/4 = TAPS/2 = 32 by
+            //      default). The FIR window must read written slots, so
+            //      consumed_cnt must be at least TAPS-1 past zero. We pick
+            //      consumed_cnt = SAMP_DEPTH - SAMP_DEPTH/4 = 96 -> samp_avail = 32,
+            //      which leaves samp_avail comfortably mid-range and matches
+            //      the wrapper's SAMP_SETPOINT=32 so the servo starts inside
+            //      its deadband.
+            if (!primed && samples_in_cnt >= SAMP_DEPTH) begin
+                primed       <= 1'b1;
+                consumed_cnt <= PRIME_CONSUMED[15:0];
+            end
 
             // ---- Stage propagation (default; S2 is overridden below) ----
             s3_v     <= s2_v;     s3_first <= s2_first; s3_last <= s2_last; s3_alpha <= s2_alpha;
@@ -251,9 +299,9 @@ module fractional_asrc #(
                 s2_v         <= 1'b1;
                 s2_first     <= 1'b1;
                 s2_last      <= (TAPS == 1);
-                s2_alpha     <= phase_acc[23 -: 8];
+                s2_alpha     <= phase_acc[23 -: 16];
                 s0_idx       <= phase_acc[31 -: PHASE_W];
-                s0_alpha     <= phase_acc[23 -: 8];
+                s0_alpha     <= phase_acc[23 -: 16];
                 s0_wbase     <= consumed_cnt[SAMP_W-1:0];
                 s0_active    <= 1'b1;
                 s0_tap       <= {{(TAP_W-1){1'b0}}, 1'b1};   // next cycle: drive tap 1

@@ -2,10 +2,9 @@
 -- Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
 -- --------------------------------------------------------------------------------
 -- Tool Version: Vivado v.2024.2 (win64) Build 5239630 Fri Nov 08 22:35:27 MST 2024
--- Date        : Sat Apr 25 08:09:11 2026
+-- Date        : Mon Apr 27 20:49:28 2026
 -- Host        : da_beast running 64-bit major release  (build 9200)
--- Command     : write_vhdl -force -mode funcsim -rename_top clock -prefix
---               clock_ clock_sim_netlist.vhdl
+-- Command     : write_vhdl -force -mode funcsim c:/proj/toy-dac/fpga/toy-dac.gen/sources_1/ip/clock/clock_sim_netlist.vhdl
 -- Design      : clock
 -- Purpose     : This VHDL netlist is a functional simulation representation of the design and should not be modified or
 --               synthesized. This netlist cannot be used for SDF annotated simulation.
@@ -15,7 +14,7 @@ library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 library UNISIM;
 use UNISIM.VCOMPONENTS.ALL;
-entity clock_clock_clk_wiz is
+entity clock_clk_wiz is
   port (
     mclk : out STD_LOGIC;
     psclk : in STD_LOGIC;
@@ -26,9 +25,9 @@ entity clock_clock_clk_wiz is
     locked : out STD_LOGIC;
     clk_in1 : in STD_LOGIC
   );
-end clock_clock_clk_wiz;
+end clock_clk_wiz;
 
-architecture STRUCTURE of clock_clock_clk_wiz is
+architecture STRUCTURE of clock_clk_wiz is
   signal clkfbout_buf_clock : STD_LOGIC;
   signal clkfbout_clock : STD_LOGIC;
   signal mclk_clock : STD_LOGIC;
@@ -70,7 +69,7 @@ mmcm_adv_inst: unisim.vcomponents.MMCME2_ADV
       CLKFBOUT_USE_FINE_PS => false,
       CLKIN1_PERIOD => 83.333000,
       CLKIN2_PERIOD => 0.000000,
-      CLKOUT0_DIVIDE_F => 14.000000,
+      CLKOUT0_DIVIDE_F => 7.000000,
       CLKOUT0_DUTY_CYCLE => 0.500000,
       CLKOUT0_PHASE => 0.000000,
       CLKOUT0_USE_FINE_PS => false,
@@ -170,7 +169,7 @@ end clock;
 
 architecture STRUCTURE of clock is
 begin
-inst: entity work.clock_clock_clk_wiz
+inst: entity work.clock_clk_wiz
      port map (
       clk_in1 => clk_in1,
       locked => locked,

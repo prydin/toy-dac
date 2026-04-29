@@ -38,9 +38,16 @@ module asrc_tb;
     localparam integer MCLK_HZ       = 108_000_000;
     localparam real    MCLK_PERIOD_NS = 1000.0 / 108.0;          // ≈9.259 ns
     localparam [31:0]  STEP_44_1     = 32'd112_261_131;
+    localparam [31:0]  STEP_48K      = 32'd122_175_407;
 
-    // Stimulus
-    localparam real    FS_IN_HZ      = 44_120.0;   // +454 ppm above nominal
+    // Stimulus — switch rate at compile time with +define+RATE_48K
+`ifdef RATE_48K
+    localparam real    FS_IN_HZ      = 48_022.0;   // +458 ppm above 48k nominal
+    localparam [31:0]  STEP_NOM      = STEP_48K;
+`else
+    localparam real    FS_IN_HZ      = 44_120.0;   // +454 ppm above 44.1k nominal
+    localparam [31:0]  STEP_NOM      = STEP_44_1;
+`endif
     localparam real    SIG_HZ_L      = 1_000.0;
     localparam real    SIG_HZ_R      = 1_500.0;
     localparam real    SIG_AMPL      = 0.5;
@@ -111,7 +118,7 @@ module asrc_tb;
         .OUT_DIV      (OUT_DIV),
         .SAMP_SETPOINT(TAPS),
         .SERVO_UPDATE_HZ(2000),
-        .STEP_NOMINAL (STEP_44_1)
+        .STEP_NOMINAL (STEP_NOM)
     ) dut (
         .clk                 (clk),
         .rst                 (rst),

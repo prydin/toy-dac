@@ -1,8 +1,10 @@
 module top(
     input wire clk,        // 100MHz clock from crystal
     output wire dac_out_l,     // DAC delta/sigma out (+)
+    output wire dac_out_l_fast,     // DAC delta/sigma out (+)
     output wire dac_out_r,     // Main clock output for debugging
     output wire dac_out_ln,    // DAC delta/sigma out (−), complement of dac_out_l
+    output wire dac_out_ln_fast,    // DAC delta/sigma out (−), complement of dac_out_l_fast
     output wire dac_out_rn,    // Complement of dac_out_r
     output wire debug1,        // Debug output 
     output wire debug2,        // Debug output 
@@ -11,20 +13,44 @@ module top(
     input wire bclk,       // I2S bit clock
     input wire lrclk,       // I2S left-right clock
     input wire din,        // I2S serial data in
+    input wire bypass,     // A/B test: HIGH = bypass ASRC, clock samples directly from I2S
     input wire [1:0] btn,     // Push buttons
     output wire [3:0] led,    // LEDs for mode and dither indication
     output wire [3:0] fifo_led, // Thermometer indicator of FIFO fill (pio16-19)
-    output wire led0_b,        // RGB LED blue channel — blinks on each ASRC adjust
-    // A/B test bypass: when HIGH, I2S samples go directly to the interpolator,
-    // skipping the ASRC FIFO and NCO. Pulled LOW on the PCB so the ASRC path
-    // is active by default when the pin is left unconnected.
-    input wire bypass
+    output wire led0_b        // RGB LED blue channel — blinks on each ASRC adjust
 );
 
 
 parameter I2S_WORDLENGTH = 32;
 parameter MODULATOR_WORDLENGTH = 32;
-parameter MODULATOR_ORDER = 4;  // 2=safe/stable, 3=good SNR if input < ~50% FS
+parameter MODULATOR_ORDER = 2;  // 1/2/3 supported by dac.v.
+                                // Sim shows ORDER=3 with Pascal coeffs (NTF=(1-z^-1)^3,
+                                // OBG=8) is unstable for ANY input — integrators saturate
+                                // and the output is broadband noise. ORDER=2 (OBG=4) is
+                                // stable and gives ~70 dB SNR in audio band at 108 MHz/64.
+
+// ── Master clock & rate-manager defaults ──────────────────────
+// MCLK_HZ is the single source of truth. The audio sample rate is
+// detected at runtime by `rate_detect` and committed to the ASRC's
+// step generator by `rate_manager`. The constants below are only
+// used as fallbacks (test modes, DDS divider, etc.).
+//
+// MCLK bumped from 54 MHz → 108 MHz for the fractional-phase ASRC
+// rewrite (Phase 4): with OUT_DIV = 64 the per-channel MAC engine
+// gets 64 mclk cycles per output strobe (1.6875 MHz output rate).
+// IMPORTANT: the `clock` IP inside src/ip/clock/ must be regenerated
+// in Vivado to produce 108 MHz at its `mclk` output before this
+// design will function on hardware. Simulation testbenches drive
+// their own clocks and are not affected.
+localparam integer MCLK_HZ          = 108_000_000;
+localparam integer ASRC_OUT_DIV     = 64;
+localparam integer FS_OUT_HZ        = MCLK_HZ / ASRC_OUT_DIV;   // 1_687_500
+localparam integer FS_DEFAULT_HZ    = 44_100;
+localparam [31:0]  INC_NOMINAL_44_1 =
+    (((64'd1 << 32) * FS_DEFAULT_HZ) + (MCLK_HZ / 2)) / MCLK_HZ;
+localparam [31:0]  STEP_NOMINAL_44_1 =
+    (((64'd1 << 32) * FS_DEFAULT_HZ) + (FS_OUT_HZ / 2)) / FS_OUT_HZ;
+localparam integer SAMPLE_DIV       = MCLK_HZ / FS_DEFAULT_HZ;
 
 // ── Mode selector: btn[0] cycles through four signal sources ──
 // Mode 0 = I2S, Mode 1 = DDS 1 kHz test tone, Mode 2 = DC (1/1000 of max), Mode 3 = Off (0V)
@@ -40,8 +66,12 @@ wire signed [I2S_WORDLENGTH-1:0] i2s_right;
 wire input_active;
 wire left_valid;
 wire right_valid;
-wire output_ready_left;
-wire output_ready_right;
+// Legacy AXI-Stream backpressure from the (removed) FIR Compiler IP.
+// The new fractional `asrc` has its own input ring buffer and never
+// stalls the producer, and the DDS sample-rate pacer is also always
+// ready, so we tie these high.
+wire output_ready_left  = 1'b1;
+wire output_ready_right = 1'b1;
 
 // ── Clock ────────────────────────────────────────────────────────
 // Single MMCM driven from the 12 MHz crystal produces the 54 MHz
@@ -54,6 +84,34 @@ wire mclk_locked;
 // stable. Without this, the DAC/FIR run on a glitching clock during
 // PLL startup and accumulate corrupt state they never recover from.
 wire rst = ~mclk_locked;
+
+// Forward declarations for rate_manager outputs — referenced by LED
+// and debug assigns earlier in the file than the rate_manager
+// instantiation itself.
+wire [31:0] rm_inc_nominal;
+wire [31:0] rm_step_nominal;
+wire        rm_asrc_rst;
+wire        rm_mute;
+wire        rm_rate_locked;
+wire        rm_unsupported;
+wire [1:0]  rm_rate_code;
+// Forward decl: 1-cycle pulse on each accepted I2S left sample.
+// Defined later (= left_valid & output_ready_left); referenced by
+// the debug-pin block above the i2s instantiation.
+wire        i2s_left_accept;
+// Forward decl: 1-mclk pulse on lrclk rising edge from the I2S receiver's
+// internal synchronizer; referenced by the frame-integrity probe below.
+wire        lrclk_pos_edge_w;
+
+// Forward declarations for asrc instance outputs / legacy diagnostic
+// aliases — referenced by recovered_clk / debug assigns below before
+// the asrc instance proper.
+wire        asrc_in_consumed;
+wire signed [31:0] asrc_dbg_step_adj;
+wire [15:0] asrc_samp_avail_l;
+wire        asrc_tick_l = asrc_in_consumed;
+wire signed [31:0] asrc_dbg_inc_adj = asrc_dbg_step_adj;   // legacy alias
+wire fifo_empty_l = (asrc_samp_avail_l == 16'd0);
 
 // Phase-shift port left tied off — the digital ASRC does the rate
 // matching, so mclk is held at its nominal frequency.
@@ -113,14 +171,93 @@ always @(posedge mclk) begin
     end
 end
 
-// LEDs: [1:0] = mode, [2] = mclk_locked, [3] = dither enabled
-assign led = {dither_en, mclk_locked, mode};
+// LEDs: [1:0] = mode, [2] = mclk_locked, [3] = audio rate locked
+assign led = {rm_rate_locked, mclk_locked, mode};
 
-// Debug pins — ASRC servo state.
-assign debug1 = mclk_locked;          // PLL locked?
-//assign debug2 = asrc_adjust;          // 1-cycle pulse per pi_out change
-assign debug3 = asrc_tick_l;          // sample tick — should be ~44.1 kHz
-assign debug4 = ~fifo_empty_l;        // anything in the FIFO?
+// Debug pins — GLITCH HUNT v2 (April 28, frame-integrity probes).
+//   debug1 = mclk_locked            — should never drop.
+//   debug2 = i2s_sample_toggle      — toggles on each accepted I2S left
+//                                     sample. ~22 kHz square wave when
+//                                     audio is flowing; freezing = source
+//                                     stopped.
+//   debug3 = frame_size_anomaly     — stretched 5 ms HIGH whenever the
+//                                     bclk-edge count between two
+//                                     successive lrclk rising edges is
+//                                     not equal to BCLK_PER_FRAME (set
+//                                     to 64 for 32-bit-per-channel I2S
+//                                     with 64-bit frames; the receiver
+//                                     auto-learns the size on first frame).
+//                                     Pulses HIGH ⇒ I2S framing is
+//                                     intermittently broken (bclk or
+//                                     lrclk glitching).
+//   debug4 = i2s_zero_word          — pulses on each accepted sample whose
+//                                     upper 24 bits are all-zero or all-
+//                                     ones (true zero or near-zero).
+assign debug1 = mclk_locked;
+
+reg debug2_r = 1'b0;
+always @(posedge mclk) begin
+    if (rst)                  debug2_r <= 1'b0;
+    else if (i2s_left_accept) debug2_r <= ~debug2_r;
+end
+assign debug2 = debug2_r;
+
+// ── Frame-integrity probe ────────────────────────────────────────
+// Use the same edge pulses i2s.v consumes. We want bclk_pos_edge and
+// lrclk_pos_edge as 1-cycle mclk-synchronous pulses; flop_sync inside
+// i2s.v exposes lrclk_pos_edge already (lrclk_pos_edge_w). For bclk
+// edge counts we re-synchronize bclk locally so we don't have to
+// thread an extra port through i2s.v.
+reg bclk_s1 = 1'b0, bclk_s2 = 1'b0, bclk_s3 = 1'b0;
+always @(posedge mclk) begin
+    bclk_s1 <= bclk;
+    bclk_s2 <= bclk_s1;
+    bclk_s3 <= bclk_s2;
+end
+wire bclk_rise_local = bclk_s2 & ~bclk_s3;
+
+reg [7:0] bclk_in_frame  = 8'd0;
+reg [7:0] last_frame_len = 8'd0;
+reg [7:0] frame_len_ref  = 8'd0;     // latched on first observed frame
+reg       frame_ref_set  = 1'b0;
+reg       anomaly_pulse  = 1'b0;
+always @(posedge mclk) begin
+    if (rst) begin
+        bclk_in_frame  <= 8'd0;
+        last_frame_len <= 8'd0;
+        frame_len_ref  <= 8'd0;
+        frame_ref_set  <= 1'b0;
+        anomaly_pulse  <= 1'b0;
+    end else begin
+        anomaly_pulse <= 1'b0;
+        if (lrclk_pos_edge_w) begin
+            last_frame_len <= bclk_in_frame;
+            bclk_in_frame  <= 8'd0;
+            if (!frame_ref_set && bclk_in_frame != 8'd0) begin
+                frame_len_ref <= bclk_in_frame;
+                frame_ref_set <= 1'b1;
+            end else if (frame_ref_set && bclk_in_frame != frame_len_ref) begin
+                anomaly_pulse <= 1'b1;
+            end
+        end else if (bclk_rise_local) begin
+            bclk_in_frame <= bclk_in_frame + 1'b1;
+        end
+    end
+end
+
+// 5 ms stretch on anomaly_pulse so the scope can see it.
+reg [19:0] anom_stretch = 20'd0;
+localparam [19:0] ANOM_PULSE = 20'd540_000;
+always @(posedge mclk) begin
+    if (rst) anom_stretch <= 20'd0;
+    else if (anomaly_pulse) anom_stretch <= ANOM_PULSE;
+    else if (anom_stretch != 20'd0) anom_stretch <= anom_stretch - 1'b1;
+end
+assign debug3 = (anom_stretch != 20'd0);
+
+assign debug4 = i2s_left_accept &&
+                (i2s_left[I2S_WORDLENGTH-1 -: 24] == 24'd0 ||
+                 i2s_left[I2S_WORDLENGTH-1 -: 24] == 24'hFFFFFF);
 
 wire signed [MODULATOR_WORDLENGTH-1:0] dac_held_left;
 wire signed [MODULATOR_WORDLENGTH-1:0] dac_held_right;
@@ -142,14 +279,18 @@ clock main_clock (
 );
 
 // ── I2S input ────────────────────────────────────────────────────
-// Runs on mclk. Its AXI-stream output feeds the FIFO, which acts
-// as an elastic buffer between I2S writes (paced by the upstream
-// source's bclk/lrclk) and the NCO-paced reads inside asrc.
-wire fifo_full_l;
-wire fifo_full_r;
-
-// LRCLK edge pulse — used by rate_detect to measure the incoming sample rate.
-wire lrclk_pos_edge;
+// Runs on mclk. Its AXI-stream output goes two places:
+//   1. Into the legacy `interpolator100x` (Xilinx FIR Compiler IP)
+//      via the bypass-path `src_*` mux below. That IP uses proper
+//      AXI-Stream backpressure, so we MUST drive `i2s.*_ready` from
+//      the interpolator's `tready`. Tying ready high breaks the
+//      handshake and causes silent sample drops whenever the FIR
+//      core's input FIFO momentarily de-asserts ready (audible as
+//      random clicks in bypass mode).
+//   2. Into the new fractional ASRC (`asrc_inst`). That module wants
+//      a 1-cycle `sample_valid` pulse per new sample, NOT held tvalid.
+//      We derive that below from the AXI accept event
+//      (left_valid & output_ready_left), which is exactly 1 cycle wide.
 
 i2s #(
     .WORDLENGTH(I2S_WORDLENGTH)
@@ -164,166 +305,168 @@ i2s #(
     .input_active(input_active),
     .left_valid(left_valid),
     .right_valid(right_valid),
-    // Backpressure: stop accepting new samples when the FIFO is full.
-    // (If we get here, the soft_pll loop has lost lock or hasn't
-    // converged yet; the I2S receiver simply stalls.)
-    .left_ready(~fifo_full_l),
-    .right_ready(~fifo_full_r),
-    .lrclk_pos_edge(lrclk_pos_edge)
+    // Backpressure follows the legacy interpolator's AXI tready so
+    // its input FIFO never silently drops samples.
+    .left_ready(output_ready_left),
+    .right_ready(output_ready_right),
+    .lrclk_pos_edge(lrclk_pos_edge_w)
 );
 
-// ── Digital ASRC ────────────────────────────────────────────────
-// The asrc module wraps:
-//   - input FIFOs  (elastic buffer between bclk-paced I2S writes
-//                   and NCO-paced reads)
-//   - nco          (NCO + PI rate servo, plus a phase-locked 100×
-//                   tick that paces the post-interpolator output)
-//   - tick-driven  pop-and-hold + AXI-stream presentation
-//   - output FIFOs (rate-leveling between the interpolator's bursty
-//                   output and the uniformly-spaced DAC consumption)
-//
-// The interpolator stays external because it's a Xilinx IP block.
-// The asrc module presents an AXI-stream loop around it.
-localparam integer FIFO_DEPTH = 64;
-localparam integer FIFO_CW    = $clog2(FIFO_DEPTH+1);
+// 1-cycle AXI "sample accepted" pulses for the new fractional ASRC.
+assign i2s_left_accept  = left_valid  & output_ready_left;
+wire   i2s_right_accept = right_valid & output_ready_right;
 
-// ── Sample-rate detection ────────────────────────────────────────
-// Use rate_detect to measure the period of the incoming LRCLK in
-// mclk cycles, then select the matching NCO increment so the PI
-// servo only needs to correct for residual jitter/drift rather than
-// the full frequency offset between 44.1 kHz and 48 kHz.
-//
-// Expected LRCLK periods at 54 MHz mclk:
-//   44.1 kHz → 1224 cycles   INC_NOMINAL = 3_507_557
-//   48.0 kHz → 1125 cycles   INC_NOMINAL = 3_817_748
-// Discrimination threshold: 1175 (midpoint, well clear of both rates).
-localparam [31:0] INC_44100      = 32'd3_507_557;
-localparam [31:0] INC_48000      = 32'd3_817_748;
-localparam [15:0] RATE_THRESHOLD = 16'd1175;
-
-wire        rate_valid;
-wire [15:0] lrclk_period;
+// ── Rate detection & management ───────────────────────────
+// rate_detect averages mclk cycles over WINDOW_SIZE lrclk periods
+// (~5.8 ms @ 44.1 kHz) and emits `rate_valid` + `period`. rate_manager
+// classifies into 32k/44.1k/48k, debounces, and drives the ASRC's
+// inc_nominal + reset + audio mute lines.
+wire        rd_valid;
+wire [31:0] rd_window_period;
+wire [15:0] rd_period;
 
 rate_detect #(
     .WINDOW_SIZE(256)
-) rate_det_inst (
+) rate_det (
     .clk           (mclk),
     .rst           (rst),
-    .lrclk_pos_edge(lrclk_pos_edge),
-    // Assert continuously: rate detection runs regardless of whether the
-    // ASRC servo is active so that the correct INC_NOMINAL is already
-    // selected when the servo enables.
+    .lrclk_pos_edge(lrclk_pos_edge_w),
     .dvalid        (1'b1),
-    .rate_valid    (rate_valid),
-    .window_period (), // unused — period (average) is sufficient
-    .period        (lrclk_period)
+    .rate_valid    (rd_valid),
+    .window_period (rd_window_period),
+    .period        (rd_period)
 );
 
-// Latch the selected INC_NOMINAL on every rate_detect measurement.
-// Defaults to 44.1 kHz so the NCO starts at a known rate after reset.
-reg [31:0] inc_nominal_sel = INC_44100;
+rate_manager #(
+    .MCLK_HZ         (MCLK_HZ),
+    .FS_OUT_HZ       (FS_OUT_HZ),
+    .MATCHES_REQUIRED(3),
+    .SETTLE_MS       (250)
+) rate_mgr (
+    .clk         (mclk),
+    .rst         (rst),
+    .rate_valid  (rd_valid),
+    .period      (rd_period),
+    .inc_nominal (rm_inc_nominal),
+    .step_nominal(rm_step_nominal),
+    .asrc_rst    (rm_asrc_rst),
+    .mute        (rm_mute),
+    .rate_locked (rm_rate_locked),
+    .unsupported (rm_unsupported),
+    .rate_code   (rm_rate_code)
+);
 
-always @(posedge mclk) begin
-    if (rst) begin
-        inc_nominal_sel <= INC_44100;
-    end else if (rate_valid) begin
-        if (lrclk_period < RATE_THRESHOLD)
-            inc_nominal_sel <= INC_48000;
-        else
-            inc_nominal_sel <= INC_44100;
-    end
-end
+// In test modes (DDS, DC) we don't care about the input sample rate —
+// the upstream DDS divider runs at the design's nominal 44.1 kHz, so
+// the ASRC's inc_nominal stays at INC_NOMINAL_44_1 and rate-manager's
+// reset/mute outputs are ignored.
+wire        i2s_mode      = (mode == MODE_I2S);
 
-wire [FIFO_CW-1:0] fifo_rd_count_l;
-wire fifo_empty_l;
-wire asrc_tick_l;
-wire asrc_adjust;
-wire signed [15:0] asrc_dbg_error;
-wire signed [31:0] asrc_dbg_inc_adj;
+// ── A/B bypass switch ────────────────────────────────────────────
+// `bypass` is tied to 3.3V (HIGH) to enable A/B test mode: the ASRC
+// FIFOs and NCO are bypassed entirely, and I2S samples drive the
+// interpolator directly on their natural lrclk-paced valid strobes.
+// The interpolator output then drives the DAC directly (no output
+// FIFO rate-leveling). This gives a clean reference signal to compare
+// against the regenerated/rate-matched path.
+//
+// Synchronize the static-ish input through 2 FFs to mclk to avoid
+// metastability if it's toggled live.
+reg [1:0] bypass_sync = 2'b00;
+always @(posedge mclk) bypass_sync <= {bypass_sync[0], bypass};
+wire bypass_s = bypass_sync[1];
+wire bypass_active = i2s_mode & bypass_s;
 
-// AXI-stream loop through the external interpolator.
-wire signed [I2S_WORDLENGTH-1:0] i2s_src_left;
-wire signed [I2S_WORDLENGTH-1:0] i2s_src_right;
-wire i2s_src_valid_l;
-wire i2s_src_valid_r;
+wire        asrc_rst_in   = rst | (i2s_mode & rm_asrc_rst);
+wire [31:0] asrc_step_nom = i2s_mode ? rm_step_nominal : STEP_NOMINAL_44_1;
+// Bypass mode forces audio through immediately, so we override the
+// rate-manager's mute (which would otherwise hold us silent for the
+// 250 ms settle window every time rate_manager re-locks).
+wire        audio_mute    = (i2s_mode & ~bypass_s) ? rm_mute : 1'b0;
+
+// ── Digital ASRC (fractional-phase, Phase 4 rewrite) ────────────
+// The new `asrc` owns its own input ring buffers, polyphase filter
+// banks, MAC engines and a PI servo on internal ring-buffer depth.
+// It emits stereo on a fixed mclk/ASRC_OUT_DIV grid (1.6875 MHz @
+// 108 MHz mclk), bypassing the old NCO / AXI-loop / output-FIFO
+// chain entirely. The legacy `interpolator100x` path is kept alive
+// only for the bypass switch (A/B reference during bring-up).
+localparam integer FIFO_DEPTH = 64;       // legacy diagnostic only
+localparam integer FIFO_CW    = $clog2(FIFO_DEPTH+1);
 
 wire signed [I2S_WORDLENGTH-1:0] dac_in_left_paced;
 wire signed [I2S_WORDLENGTH-1:0] dac_in_right_paced;
 wire dac_dv_left;
 wire dac_dv_right;
+// (asrc_in_consumed, asrc_dbg_step_adj, asrc_samp_avail_l declared
+// earlier as forward-decls for legacy-alias wires.)
+wire asrc_adjust;
+wire signed [15:0] asrc_dbg_error;
+wire [31:0]        asrc_dbg_step;
+wire [15:0]        asrc_samp_avail_r;
+// Remaining legacy diagnostic alias (depends on FIFO_CW/FIFO_DEPTH).
+wire [FIFO_CW-1:0] fifo_rd_count_l =
+    (asrc_samp_avail_l > FIFO_DEPTH[15:0]) ? FIFO_DEPTH[FIFO_CW-1:0]
+                                           : asrc_samp_avail_l[FIFO_CW-1:0];
 
-// Run the servo whenever we're in I2S mode AND not bypassed.
-// When bypass is high, samples flow directly from I2S to the interpolator
-// without the ASRC FIFO / NCO, so the servo must be disabled.
-wire asrc_enable = (mode == MODE_I2S) && !bypass;
+// Run the servo whenever we're in I2S mode.
+wire asrc_enable = (mode == MODE_I2S);
 
 asrc #(
-    .WIDTH         (I2S_WORDLENGTH),
-    .FIFO_DEPTH    (FIFO_DEPTH),
-    .OUT_FIFO_DEPTH(64),
-    .MCLK_HZ       (54_000_000),
-    .INC_NOMINAL   (32'd3_507_557)   // 44.1 kHz @ 54 MHz mclk (overridden at runtime)
+    .WIDTH          (I2S_WORDLENGTH),
+    .COEFF_W        (18),
+    .PHASES         (256),
+    .TAPS           (64),
+    .COEFF_FILE     ("frac_asrc.mem"),
+    .MCLK_HZ        (MCLK_HZ),
+    .OUT_DIV        (ASRC_OUT_DIV),
+    .SAMP_SETPOINT  (32),                          // mid-safe-range. Buffer is 2*TAPS=128 deep but the FIR
+                                                   // can only see samples [C-63, C] of the most recent 128,
+                                                   // so safe range is samp_avail in [1, 65]. Old setpoint 64
+                                                   // sat at the upper edge -> 1-sample overshoot caused stale-read clicks.
+    .SERVO_UPDATE_HZ(100),                         // 2000 was unstable in HW; 100 Hz convergence is plenty
+    .STEP_NOMINAL   (STEP_NOMINAL_44_1)
 ) asrc_inst (
-    .clk              (mclk),
-    .rst              (rst),
-    .enable           (asrc_enable),
-    .inc_nominal_in   (inc_nominal_sel),
+    .clk                 (mclk),
+    .rst                 (asrc_rst_in),
+    .enable              (asrc_enable),
+    .step_nominal_in     (asrc_step_nom),
 
-    .i2s_left         (i2s_left),
-    .i2s_right        (i2s_right),
-    .left_valid       (left_valid),
-    .right_valid      (right_valid),
-    .fifo_full_l      (fifo_full_l),
-    .fifo_full_r      (fifo_full_r),
+    .i2s_left            (i2s_left),
+    .i2s_right           (i2s_right),
+    .left_valid          (i2s_left_accept),
+    .right_valid         (i2s_right_accept),
 
-    .src_left         (i2s_src_left),
-    .src_right        (i2s_src_right),
-    .src_valid_left   (i2s_src_valid_l),
-    .src_valid_right  (i2s_src_valid_r),
-    .src_ready_left   (output_ready_left),
-    .src_ready_right  (output_ready_right),
+    .dac_left            (dac_in_left_paced),
+    .dac_right           (dac_in_right_paced),
+    .dac_dv_left         (dac_dv_left),
+    .dac_dv_right        (dac_dv_right),
 
-    .interp_left      (dac_in_left),
-    .interp_right     (dac_in_right),
-    .interp_valid_left (dac_dv_left_raw),
-    .interp_valid_right(dac_dv_right_raw),
-
-    .dac_left         (dac_in_left_paced),
-    .dac_right        (dac_in_right_paced),
-    .dac_dv_left      (dac_dv_left),
-    .dac_dv_right     (dac_dv_right),
-
-    .fifo_count       (fifo_rd_count_l),
-    .fifo_empty_l     (fifo_empty_l),
-    .tick             (asrc_tick_l),
-    .adjust           (asrc_adjust),
-    .dbg_error        (asrc_dbg_error),
-    .dbg_inc_adj      (asrc_dbg_inc_adj)
+    .dbg_samples_avail_l (asrc_samp_avail_l),
+    .dbg_samples_avail_r (asrc_samp_avail_r),
+    .in_consumed         (asrc_in_consumed),
+    .dbg_step            (asrc_dbg_step),
+    .dbg_servo_error     (asrc_dbg_error),
+    .dbg_servo_step_adj  (asrc_dbg_step_adj),
+    .adjust              (asrc_adjust)
 );
 
-// Flash the blue LED on each ASRC adjust — this lets us visually confirm that
-mono_ff #(
-    .FCLK(54_000_000),
-    .DELAY(50_000_000), // 50 ms delay
-    .RESETTABLE(1'b0)
-) asrc_adjust_sync_inst (
-    .clk(mclk),
-    .rst(rst),
-    .d(asrc_adjust),
-    .q(led0_b) // Blink the blue LED on each ASRC adjust
-);
+// SANITY-CHECK BLINK: free-running ~2 Hz square wave on the blue LED.
+// Completely independent of mode, ASRC state, I2S input, etc.
+// If the blue LED is blinking steadily, the new bitstream is loaded.
+// (Was: blue LED pulsed on each ASRC adjust via mono_ff.)
+reg [26:0] sanity_cnt = 27'd0;
+reg        sanity_q   = 1'b0;
+always @(posedge mclk) begin
+    // 108 MHz / 2^26 ~= 1.6 Hz toggle => ~0.8 Hz blink. Fine for "is it alive".
+    sanity_cnt <= sanity_cnt + 1'b1;
+    sanity_q   <= sanity_cnt[26];
+end
+assign led0_b = sanity_q;
+wire _unused_asrc_adjust = asrc_adjust;
 
-// Also route the ASRC adjust pulse to a debug pin for oscilloscope viewing. Stretch it to 1 ms so it's easier to see on the scope.
-mono_ff #(
-    .FCLK(54_000_000),
-    .DELAY(100_000_000), // 1 ms delay
-    .RESETTABLE(1'b0)
-) asrc_adjust_sync_scope_inst (
-    .clk(mclk),
-    .rst(rst),
-    .d(asrc_adjust),
-    .q(debug2) // Blink the blue LED on each ASRC adjust
-);
+// (debug2 reassigned above for glitch hunt; the older asrc_rst probe is
+// removed.)
 
 
 
@@ -344,11 +487,9 @@ dds_compiler_0 test_signal (
 // Peak ≈ ±2^30, well below the FIR's ±2^31 output clamp.
 wire signed [31:0] dds_data = {{1{dds_raw[25]}}, dds_raw[25:0], 5'b0};
 
-// Sample-rate divider: ~44.1 kHz tick from mclk.
-// SAMPLE_DIV = mclk_freq / 44100.  Must update when PLL changes.
-// 27 MHz → 612,  54 MHz → 1224
-localparam SAMPLE_DIV = 1224;
-reg [10:0] sample_cnt = 0;
+// Sample-rate divider: ~FS_HZ tick from mclk.
+// SAMPLE_DIV is derived from MCLK_HZ/FS_HZ at the top of this module.
+reg [$clog2(SAMPLE_DIV)-1:0] sample_cnt = 0;
 reg        test_valid = 0;
 reg signed [31:0] test_held = 0;
 
@@ -371,9 +512,6 @@ always @(posedge mclk) begin
         end
     end
 end
-
-// ── Set to 1 to bypass interpolator and feed DDS straight into the DAC ──
-parameter BYPASS_INTERPOLATOR = 0;
 
 // ── DC test signal: 1/1000 of positive full-scale ──
 localparam signed [I2S_WORDLENGTH-1:0] DC_LEVEL = 32'sh7FFF_FFFF / 1000;
@@ -398,20 +536,21 @@ always @(*) begin
             src_valid_left  = test_valid;
             src_valid_right = test_valid;
         end
-        default: begin // MODE_I2S
-            if (bypass) begin
-                // Direct I2S passthrough: bypass the ASRC FIFO/NCO and feed
-                // raw I2S samples straight into the interpolator.
+        default: begin // MODE_I2S — the new fractional asrc owns the
+                       // DAC, so the legacy interpolator path stays
+                       // idle. In `bypass_active` the I2S receiver
+                       // drives the interpolator directly (A/B
+                       // reference path).
+            if (bypass_active) begin
                 src_left        = i2s_left;
                 src_right       = i2s_right;
                 src_valid_left  = left_valid;
                 src_valid_right = right_valid;
             end else begin
-                // Normal ASRC path: samples are paced by the NCO-rate servo.
-                src_left        = i2s_src_left;
-                src_right       = i2s_src_right;
-                src_valid_left  = i2s_src_valid_l;
-                src_valid_right = i2s_src_valid_r;
+                src_left        = {I2S_WORDLENGTH{1'b0}};
+                src_right       = {I2S_WORDLENGTH{1'b0}};
+                src_valid_left  = 1'b0;
+                src_valid_right = 1'b0;
             end
         end
     endcase
@@ -448,7 +587,20 @@ reg [3:0] fifo_led_r = 4'b0000;
 always @(posedge mclk) begin
     if (rst) begin
         fifo_led_r <= 4'b1010;  // visible startup pattern
+    end else if (rm_rate_locked) begin
+        // When locked, repurpose the LED bar to show detected rate
+        // and unsupported flag:
+        //   [0] = 32 kHz
+        //   [1] = 44.1 kHz
+        //   [2] = 48 kHz
+        //   [3] = unsupported (high if rate outside table)
+        fifo_led_r[0] <= (rm_rate_code == 2'd0);
+        fifo_led_r[1] <= (rm_rate_code == 2'd1);
+        fifo_led_r[2] <= (rm_rate_code == 2'd2);
+        fifo_led_r[3] <= rm_unsupported;
     end else begin
+        // While unlocked / settling: thermometer of FIFO high-water
+        // mark, as before.
         fifo_led_r[0] <= (count_max_lat >= 7'd8);
         fifo_led_r[1] <= (count_max_lat >= 7'd16);
         fifo_led_r[2] <= (count_max_lat >= 7'd32);
@@ -458,54 +610,10 @@ end
 assign fifo_led = fifo_led_r;
 
 
-wire filtered_valid_left;
-wire signed [I2S_WORDLENGTH-1:0] filtered_left;
-
-interpolator100x #(
-  .WIDTH(I2S_WORDLENGTH)
- ) interpolator_left (
-  .aclk(mclk),
-  .s_axis_data_tvalid(src_valid_left),
-  .s_axis_data_tready(output_ready_left),
-  .s_axis_data_tdata(src_left),
-  .m_axis_data_tvalid(filtered_valid_left),
-  .m_axis_data_tdata(filtered_left)
-);
-
-wire filtered_valid_right;
-wire signed [I2S_WORDLENGTH-1:0] filtered_right;
-
-interpolator100x #(
-  .WIDTH(I2S_WORDLENGTH)
-) interpolator_right (
-  .aclk(mclk),
-  .s_axis_data_tvalid(src_valid_right),
-  .s_axis_data_tready(output_ready_right),
-  .s_axis_data_tdata(src_right),
-  .m_axis_data_tvalid(filtered_valid_right),
-  .m_axis_data_tdata(filtered_right)
-);
-
-
-// ── DAC input mux: interpolator output or direct DDS bypass ──
-wire signed [I2S_WORDLENGTH-1:0] dac_in_left  = BYPASS_INTERPOLATOR ? src_left  : filtered_left;
-wire signed [I2S_WORDLENGTH-1:0] dac_in_right = BYPASS_INTERPOLATOR ? src_right : filtered_right;
-wire dac_dv_left_raw  = BYPASS_INTERPOLATOR ? src_valid_left  : filtered_valid_left;
-wire dac_dv_right_raw = BYPASS_INTERPOLATOR ? src_valid_right : filtered_valid_right;
-
-// (Output rate-leveling FIFOs now live inside the asrc module.
-// dac_in_left/right + dac_dv_*_raw are wired to asrc.interp_*; the
-// asrc module exposes dac_in_left_paced / dac_dv_left etc. for the
-// DAC instances below.)
-
-// ── Final DAC input mux: ASRC-paced path vs bypass ──────────────
-// In bypass mode the ASRC output FIFO is unused; take filtered_left/right
-// directly from the interpolator so the DAC receives samples at I2S timing
-// without any ASRC buffering.
-wire signed [I2S_WORDLENGTH-1:0] dac_in_left_final  = bypass ? filtered_left  : dac_in_left_paced;
-wire signed [I2S_WORDLENGTH-1:0] dac_in_right_final = bypass ? filtered_right : dac_in_right_paced;
-wire dac_dv_left_final  = bypass ? filtered_valid_left  : dac_dv_left;
-wire dac_dv_right_final = bypass ? filtered_valid_right : dac_dv_right;
+// (Legacy interpolator100x / FIR Compiler IP removed. The fractional
+//  `asrc` is now the sole interpolation path for MODE_I2S; the
+//  bypass switch routes raw I2S samples straight to the DAC instead
+//  of through the old 100x upsampler.)
 
 wire [31:0] dither1_raw;
 wire [31:0] dither2_raw;
@@ -537,14 +645,40 @@ wire [31:0] dither2 = dither_en ? dither2_raw : 32'd0;
 wire dac_raw_l;
 wire dac_raw_r;
 
+// DAC input/dvalid mux:
+//   MODE_I2S, bypass=0 : ASRC output
+//   MODE_I2S, bypass=1 : raw I2S samples (no resampling)
+//   MODE_DDS / MODE_DC : the source mux directly (the ASRC is
+//                        disabled in these modes, so its dvalid
+//                        never asserts and din_held would be stuck
+//                        at zero — must use src_valid_left/right
+//                        instead).
+wire i2s_path = (mode == MODE_I2S);
+wire signed [I2S_WORDLENGTH-1:0] dac_din_left  =
+        (i2s_path && bypass_active) ? i2s_left            :
+        (i2s_path)                  ? dac_in_left_paced   :
+                                      src_left;
+wire signed [I2S_WORDLENGTH-1:0] dac_din_right =
+        (i2s_path && bypass_active) ? i2s_right           :
+        (i2s_path)                  ? dac_in_right_paced  :
+                                      src_right;
+wire dac_dvalid_l =
+        (i2s_path && bypass_active) ? left_valid          :
+        (i2s_path)                  ? dac_dv_left         :
+                                      src_valid_left;
+wire dac_dvalid_r =
+        (i2s_path && bypass_active) ? right_valid         :
+        (i2s_path)                  ? dac_dv_right        :
+                                      src_valid_right;
+
 dac #(
     .WORDLENGTH(MODULATOR_WORDLENGTH),
     .ORDER(MODULATOR_ORDER)
 ) dac_left (
     .clk(mclk),
     .rst(rst),
-    .din(dac_in_left_final), 
-    .dvalid(dac_dv_left_final),
+    .din(dac_din_left), 
+    .dvalid(dac_dvalid_l),
     .dither1(dither1),
     .dither2(dither2),
     .dout(dac_raw_l),
@@ -558,8 +692,8 @@ dac #(
 ) dac_right (
     .clk(mclk),
     .rst(rst),
-    .din(dac_in_right_final), 
-    .dvalid(dac_dv_right_final),
+    .din(dac_din_right), 
+    .dvalid(dac_dvalid_r),
     .dither1(dither1),
     .dither2(dither2),
     .dout(dac_raw_r),
@@ -568,27 +702,44 @@ dac #(
 
 // Output registers for DAC — these get packed into IOB flip-flops
 // via the IOB=TRUE constraint, ensuring + and − switch simultaneously.
-(* IOB = "TRUE" *) reg dac_out_l_r  = 0;
-(* IOB = "TRUE" *) reg dac_out_ln_r = 0;
-(* IOB = "TRUE" *) reg dac_out_r_r  = 0;
-(* IOB = "TRUE" *) reg dac_out_rn_r = 0;
+//
+// Each pad gets its own dedicated IOB flop, all clocked off the same
+// mclk edge. The inversion happens BEFORE the flop on the (−) legs so
+// the +/− pair has matched clock-to-out delay (sub-ps skew). The
+// `_fast` pads on PMOD JA1/JA2 are physically separate pins from the
+// A4/A3 pair, so they need their own flops too — sharing one register
+// across two pads forces fabric routing on one of them and reintroduces
+// +/− skew that shows up as 2nd-harmonic distortion.
+(* IOB = "TRUE" *) reg dac_out_l_r       = 0;
+(* IOB = "TRUE" *) reg dac_out_ln_r      = 0;
+(* IOB = "TRUE" *) reg dac_out_r_r       = 0;
+(* IOB = "TRUE" *) reg dac_out_rn_r      = 0;
+(* IOB = "TRUE" *) reg dac_out_l_fast_r  = 0;
+(* IOB = "TRUE" *) reg dac_out_ln_fast_r = 0;
 
 always @(posedge mclk) begin
-    if (rst || mode == MODE_OFF) begin
-        dac_out_l_r  <= 1'b0;
-        dac_out_ln_r <= 1'b0;
-        dac_out_r_r  <= 1'b0;
-        dac_out_rn_r <= 1'b0;
+    if (rst || mode == MODE_OFF || audio_mute) begin
+        dac_out_l_r       <= 1'b0;
+        dac_out_ln_r      <= 1'b0;
+        dac_out_r_r       <= 1'b0;
+        dac_out_rn_r      <= 1'b0;
+        dac_out_l_fast_r  <= 1'b0;
+        dac_out_ln_fast_r <= 1'b0;
     end else begin
-        dac_out_l_r  <=  dac_raw_l;
-        dac_out_ln_r <= ~dac_raw_l;
-        dac_out_r_r  <=  dac_raw_r;
-        dac_out_rn_r <= ~dac_raw_r;
+        dac_out_l_r       <=  dac_raw_l;
+        dac_out_ln_r      <= ~dac_raw_l;
+        dac_out_r_r       <=  dac_raw_r;
+        dac_out_rn_r      <= ~dac_raw_r;
+        dac_out_l_fast_r  <=  dac_raw_l;
+        dac_out_ln_fast_r <= ~dac_raw_l;
     end
 end
 
-assign dac_out_l  = dac_out_l_r;
-assign dac_out_ln = dac_out_ln_r;
+assign dac_out_l       = dac_out_l_r;
+assign dac_out_ln      = dac_out_ln_r;
+assign dac_out_l_fast  = dac_out_l_fast_r;
+assign dac_out_ln_fast = dac_out_ln_fast_r;
+
 assign dac_out_r  = dac_out_r_r;
 assign dac_out_rn = dac_out_rn_r;
     

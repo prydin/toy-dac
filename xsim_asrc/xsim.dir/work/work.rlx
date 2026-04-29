@@ -2,7 +2,10 @@
 2020.2
 Nov  8 2024
 22:36:57
-C:/proj/toy-dac/fpga/toy-dac/src/rtl/fractional_asrc.v,1777335766,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/toy-dac.srcs/sources_1/new/frac_servo.v,,fractional_asrc,,,,,,,,
-C:/proj/toy-dac/fpga/toy-dac/toy-dac.srcs/sim_1/new/asrc_tb.v,1777336235,systemVerilog,,,,asrc_tb,,,,,,,,
-C:/proj/toy-dac/fpga/toy-dac/toy-dac.srcs/sources_1/new/asrc.v,1777336231,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/toy-dac.srcs/sim_1/new/asrc_tb.v,,asrc,,,,,,,,
-C:/proj/toy-dac/fpga/toy-dac/toy-dac.srcs/sources_1/new/frac_servo.v,1777335598,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/toy-dac.srcs/sources_1/new/asrc.v,,frac_servo,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/asrc.v,1777336231,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/toy-dac.srcs/sim_1/new/asrc_tb.v,,asrc,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/frac_servo.v,1777335598,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/asrc.v,,frac_servo,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/fractional_asrc.v,1777339441,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/frac_servo.v,,fractional_asrc,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/i2s.v,1777031955,verilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/root.v,,flop_sync;i2s,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/rate_manager.v,1777336504,verilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/i2s.v,,rate_manager,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/root.v,1777339062,verilog,,,,top,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/toy-dac.srcs/sim_1/new/asrc_tb.v,1777337098,systemVerilog,,,,asrc_tb,,,,,,,,

@@ -2,10 +2,9 @@
 // Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
 // --------------------------------------------------------------------------------
 // Tool Version: Vivado v.2024.2 (win64) Build 5239630 Fri Nov 08 22:35:27 MST 2024
-// Date        : Sat Apr 25 08:09:11 2026
+// Date        : Mon Apr 27 20:49:28 2026
 // Host        : da_beast running 64-bit major release  (build 9200)
-// Command     : write_verilog -force -mode synth_stub -rename_top clock -prefix
-//               clock_ clock_stub.v
+// Command     : write_verilog -force -mode synth_stub c:/proj/toy-dac/fpga/toy-dac.gen/sources_1/ip/clock/clock_stub.v
 // Design      : clock
 // Purpose     : Stub declaration of top-level module interface
 // Device      : xc7s25csga225-1

@@ -1,0 +1,1 @@
+-debug "typical" "dac_modulator_tb" -s "dac_modulator_sim" 

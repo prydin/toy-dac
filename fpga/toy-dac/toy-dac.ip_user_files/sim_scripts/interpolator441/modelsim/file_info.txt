@@ -1,7 +1,0 @@
-xpm_cdc.sv,systemverilog,xpm,../../../../../../../../Xilinx/Vivado/2024.2/data/ip/xpm/xpm_cdc/hdl/xpm_cdc.sv,
-xpm_VCOMP.vhd,vhdl,xpm,../../../../../../../../Xilinx/Vivado/2024.2/data/ip/xpm/xpm_VCOMP.vhd,
-xbip_utils_v3_0_vh_rfs.vhd,vhdl,xbip_utils_v3_0_14,../../../ipstatic/hdl/xbip_utils_v3_0_vh_rfs.vhd,
-axi_utils_v2_0_vh_rfs.vhd,vhdl,axi_utils_v2_0_10,../../../ipstatic/hdl/axi_utils_v2_0_vh_rfs.vhd,
-fir_compiler_v7_2_vh_rfs.vhd,vhdl,fir_compiler_v7_2_23,../../../ipstatic/hdl/fir_compiler_v7_2_vh_rfs.vhd,
-interpolator441.vhd,vhdl,xil_defaultlib,../../../../toy-dac.gen/sources_1/ip/interpolator441/sim/interpolator441.vhd,
-glbl.v,Verilog,xil_defaultlib,glbl.v
