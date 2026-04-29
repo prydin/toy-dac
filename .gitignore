@@ -1,4 +1,5 @@
 *.log
+*.jou
 /fpga/toy-dac/toy-dac.cache
 /fpga/toy-dac/toy-dac.gen
 /fpga/toy-dac/toy-dac.hw
@@ -9,3 +10,6 @@ kicad/dac/dac-backups/dac-2026-04-15_193132.zip
 /kicad/dac/dac-backups
 *.lck
 /kicad/dac/.history
+/xsim.dir
+/xsim_lint
+/xsim_lint_work

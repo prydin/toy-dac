@@ -1,9 +1,0 @@
-0.7
-2020.2
-Nov  8 2024
-22:36:57
-C:/proj/toy-dac/fpga/toy-dac/src/rtl/fractional_asrc.v,1777335766,verilog,,C:/proj/toy-dac/fpga/toy-dac/toy-dac.srcs/sources_1/new/frac_servo.v,,fractional_asrc,,,,,,,,
-C:/proj/toy-dac/fpga/toy-dac/toy-dac.srcs/sources_1/new/asrc.v,1777336231,verilog,,C:/proj/toy-dac/fpga/toy-dac/toy-dac.srcs/sources_1/new/rate_manager.v,,asrc,,,,,,,,
-C:/proj/toy-dac/fpga/toy-dac/toy-dac.srcs/sources_1/new/frac_servo.v,1777335598,verilog,,C:/proj/toy-dac/fpga/toy-dac/toy-dac.srcs/sources_1/new/asrc.v,,frac_servo,,,,,,,,
-C:/proj/toy-dac/fpga/toy-dac/toy-dac.srcs/sources_1/new/rate_manager.v,1777336504,verilog,,C:/proj/toy-dac/fpga/toy-dac/toy-dac.srcs/sources_1/new/root.v,,rate_manager,,,,,,,,
-C:/proj/toy-dac/fpga/toy-dac/toy-dac.srcs/sources_1/new/root.v,1777336877,verilog,,,,top,,,,,,,,
