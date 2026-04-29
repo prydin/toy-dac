@@ -451,19 +451,22 @@ asrc #(
     .adjust              (asrc_adjust)
 );
 
-// SANITY-CHECK BLINK: free-running ~2 Hz square wave on the blue LED.
-// Completely independent of mode, ASRC state, I2S input, etc.
-// If the blue LED is blinking steadily, the new bitstream is loaded.
-// (Was: blue LED pulsed on each ASRC adjust via mono_ff.)
-reg [26:0] sanity_cnt = 27'd0;
-reg        sanity_q   = 1'b0;
-always @(posedge mclk) begin
-    // 108 MHz / 2^26 ~= 1.6 Hz toggle => ~0.8 Hz blink. Fine for "is it alive".
-    sanity_cnt <= sanity_cnt + 1'b1;
-    sanity_q   <= sanity_cnt[26];
-end
-assign led0_b = sanity_q;
-wire _unused_asrc_adjust = asrc_adjust;
+// Blue LED: stretched pulse on every ASRC servo adjust. Each adjust
+// is a 1-cycle pulse at the 100 Hz servo update rate; the mono_ff
+// stretches it to ~30 ms so it's visible to the eye. With the servo
+// locked and the input rate stable, blinks should be sparse; faster
+// blinking means the servo is actively chasing input drift.
+wire led0_b_pulse;
+mono_ff #(
+    .FCLK     (MCLK_HZ),
+    .DELAY_MS (30)
+) blue_led_stretch (
+    .clk (mclk),
+    .rst (rst),
+    .d   (asrc_adjust),
+    .q   (led0_b_pulse)
+);
+assign led0_b = led0_b_pulse;
 
 // (debug2 reassigned above for glitch hunt; the older asrc_rst probe is
 // removed.)

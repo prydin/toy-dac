@@ -13,3 +13,6 @@ kicad/dac/dac-backups/dac-2026-04-15_193132.zip
 /xsim.dir
 /xsim_lint
 /xsim_lint_work
+/fpga/toy-dac.gen
+/fpga/toy-dac/xsim.dir
+fpga/toy-dac/xvlog.pb

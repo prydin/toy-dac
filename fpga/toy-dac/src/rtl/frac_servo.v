@@ -45,7 +45,27 @@ module frac_servo #(
     parameter integer KI                 = 64,
     parameter integer ERR_DEADBAND       = 1,
     parameter signed [31:0] STEP_ADJ_MAX =  32'sd16777216,   //  +2^24
-    parameter signed [31:0] STEP_ADJ_MIN = -32'sd16777216    //  -2^24
+    parameter signed [31:0] STEP_ADJ_MIN = -32'sd16777216,   //  -2^24
+
+    // Output slew-rate limiter. The PI loop is allowed to compute a
+    // new target every UPDATE_HZ tick, but the step value handed to
+    // the ASRC is only allowed to change by 1 LSB per
+    // STEP_SLEW_PERIOD mclks. This converts every PI "jump" into a
+    // smooth ramp, eliminating the FM impulse that an instantaneous
+    // step change would inject around the audio carrier.
+    //   default 1024 mclks / LSB @ 108 MHz  ≈  10.5 µs per LSB
+    //                                      ≈  100 k LSB / s slew
+    //                                      ≈  40 Hz / s frequency-chirp ceiling
+    // (1 LSB of step = Fs_out/2^32 ≈ 3.93e-4 Hz of consumed-rate change)
+    parameter integer STEP_SLEW_PERIOD   = 1024,
+
+    // LED / `adjust` quantisation. The output `adjust` pulse fires
+    // only when the smoothed step crosses an N-LSB boundary, so the
+    // LED blinks ~once per `2^ADJUST_QUANTUM_LOG2` LSB of cumulative
+    // step movement instead of once per PI update. Default = 14 →
+    // one pulse per 16384 LSB ≈ 6.4 Hz of consumed-rate adjustment,
+    // i.e. "big enough that you'd actually want to know about it".
+    parameter integer ADJUST_QUANTUM_LOG2 = 14
 )(
     input  wire                              clk,
     input  wire                              rst,
@@ -136,33 +156,70 @@ module frac_servo #(
             upd_cnt <= 0;
             integ   <= 32'sd0;
             pi_out  <= 32'sd0;
-            adjust  <= 1'b0;
         end else if (!enable) begin
             // Hold step at nominal (zero adjustment) and reset
             // integrator so re-enable starts clean.
             upd_cnt <= 0;
             integ   <= 32'sd0;
             pi_out  <= 32'sd0;
-            adjust  <= 1'b0;
         end else begin
             upd_cnt <= upd_tick ? {DIV_W{1'b0}} : upd_cnt + 1'b1;
-            adjust  <= 1'b0;
             if (upd_tick) begin
                 integ  <= integ_n_q;
                 pi_out <= pi_n_q;
-                adjust <= (pi_n_q != pi_out);
             end
         end
     end
 
-    // ── Compose effective step: step_nominal + pi_out ───────────
+    // ── Output slew-rate limiter ────────────────────────────────
+    // pi_out is the "target" the PI loop wants. pi_smooth is what we
+    // actually hand to the ASRC, and it ramps toward pi_out by 1 LSB
+    // per STEP_SLEW_PERIOD mclks. Any single PI jump is therefore
+    // applied as a smooth chirp over (|delta| × STEP_SLEW_PERIOD)
+    // mclks instead of a single-cycle discontinuity.
+    localparam integer SLEW_W = $clog2(STEP_SLEW_PERIOD);
+    reg [SLEW_W-1:0]  slew_cnt  = {SLEW_W{1'b0}};
+    reg signed [31:0] pi_smooth = 32'sd0;
+    wire slew_tick = (slew_cnt == STEP_SLEW_PERIOD - 1);
+
+    always @(posedge clk) begin
+        if (rst || !enable) begin
+            slew_cnt  <= {SLEW_W{1'b0}};
+            pi_smooth <= 32'sd0;
+        end else begin
+            slew_cnt <= slew_tick ? {SLEW_W{1'b0}} : slew_cnt + 1'b1;
+            if (slew_tick) begin
+                if      (pi_smooth < pi_out) pi_smooth <= pi_smooth + 32'sd1;
+                else if (pi_smooth > pi_out) pi_smooth <= pi_smooth - 32'sd1;
+            end
+        end
+    end
+
+    // ── Quantised `adjust` pulse for the LED ────────────────────
+    // Pulse only when the smoothed step crosses an ADJUST_QUANTUM
+    // boundary in either direction. With slow drift this is a
+    // sub-Hz event; in steady-state lock it never fires.
+    wire signed [31:0] pi_smooth_q     = pi_smooth >>> ADJUST_QUANTUM_LOG2;
+    reg  signed [31:0] pi_smooth_q_prev = 32'sd0;
+
+    always @(posedge clk) begin
+        if (rst || !enable) begin
+            pi_smooth_q_prev <= 32'sd0;
+            adjust           <= 1'b0;
+        end else begin
+            pi_smooth_q_prev <= pi_smooth_q;
+            adjust           <= (pi_smooth_q != pi_smooth_q_prev);
+        end
+    end
+
+    // ── Compose effective step: step_nominal + pi_smooth ─────────
     // Add as 33-bit signed then truncate; step_nominal_in is unsigned
-    // Q0.32 and pi_out is signed adjustment in the same units.
-    wire signed [32:0] step_sum = $signed({1'b0, step_nominal_in}) + pi_out;
+    // Q0.32 and pi_smooth is the slew-rate-limited signed adjustment.
+    wire signed [32:0] step_sum = $signed({1'b0, step_nominal_in}) + pi_smooth;
     assign step = step_sum[31:0];
 
     assign dbg_error    = err_q;
-    assign dbg_step_adj = pi_out;
+    assign dbg_step_adj = pi_smooth;
 
 endmodule
 
