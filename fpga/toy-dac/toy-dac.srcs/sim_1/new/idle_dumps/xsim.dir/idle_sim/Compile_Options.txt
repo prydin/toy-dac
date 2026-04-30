@@ -1,0 +1,1 @@
+-debug "off" "dac_idle_tone_tb" -s "idle_sim" 

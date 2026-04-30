@@ -46,8 +46,8 @@ set_property -dict { PACKAGE_PIN H2    IOSTANDARD LVCMOS33 SLEW FAST} [get_ports
 ## Dedicated Digital I/O on the PIO Headers
 
 # I2S Audio Interface
-set_property -dict {PACKAGE_PIN L1 IOSTANDARD LVCMOS33} [get_ports bclk]
-set_property -dict {PACKAGE_PIN M4 IOSTANDARD LVCMOS33} [get_ports lrclk]
+set_property -dict {PACKAGE_PIN L1 IOSTANDARD LVCMOS33} [get_ports lrclk]
+set_property -dict {PACKAGE_PIN M4 IOSTANDARD LVCMOS33} [get_ports bclk]
 set_property -dict {PACKAGE_PIN M3 IOSTANDARD LVCMOS33} [get_ports din]
 
 #set_property -dict {PACKAGE_PIN N2 IOSTANDARD LVCMOS33} [get_ports pio4]
@@ -92,8 +92,8 @@ set_property -dict {PACKAGE_PIN B4 IOSTANDARD LVCMOS33} [get_ports debug4]
 # Right channel: N2 (IO_L7P_T1_34) / M2 (IO_L7N_T1_34)
 set_property -dict {PACKAGE_PIN A4 IOSTANDARD LVCMOS33 SLEW FAST DRIVE 12} [get_ports dac_out_l]
 set_property -dict {PACKAGE_PIN A3 IOSTANDARD LVCMOS33 SLEW FAST DRIVE 12} [get_ports dac_out_ln]
-set_property -dict {PACKAGE_PIN N2 IOSTANDARD LVCMOS33 SLEW FAST DRIVE 12} [get_ports dac_out_r]
-set_property -dict {PACKAGE_PIN M2 IOSTANDARD LVCMOS33 SLEW FAST DRIVE 12} [get_ports dac_out_rn]
+set_property -dict {PACKAGE_PIN K14 IOSTANDARD LVCMOS33 SLEW FAST DRIVE 12} [get_ports dac_out_r]
+set_property -dict {PACKAGE_PIN L14 IOSTANDARD LVCMOS33 SLEW FAST DRIVE 12} [get_ports dac_out_rn]
 
 ## Quad SPI Flash
 ## Note: QSPI clock can only be accessed through the STARTUPE2 primitive

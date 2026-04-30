@@ -171,8 +171,10 @@ always @(posedge mclk) begin
     end
 end
 
-// LEDs: [1:0] = mode, [2] = mclk_locked, [3] = audio rate locked
-assign led = {rm_rate_locked, mclk_locked, mode};
+// LEDs: [1:0] = mode, [2] = mclk_locked, [3] = dither_en
+//   (audio-rate-lock indication is still available on fifo_led, which
+//    switches to a rate-code display once the rate detector locks.)
+assign led = {dither_en, mclk_locked, mode};
 
 // Debug pins — GLITCH HUNT v2 (April 28, frame-integrity probes).
 //   debug1 = mclk_locked            — should never drop.

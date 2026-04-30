@@ -1,0 +1,7 @@
+0.7
+2020.2
+Nov  8 2024
+22:36:57
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/dac.v,1777517025,verilog,,C:/proj/toy-dac/fpga/toy-dac/toy-dac.srcs/sim_1/new/dac_sine_tb.v,,dac,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/toy-dac.srcs/sim_1/new/dac_idle_tone_tb.v,1777551284,verilog,,,,dac_idle_tone_tb,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/toy-dac.srcs/sim_1/new/dac_sine_tb.v,1777553286,verilog,,,,dac_sine_tb,,,,,,,,

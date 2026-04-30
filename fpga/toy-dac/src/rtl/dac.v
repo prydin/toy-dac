@@ -88,24 +88,48 @@ endfunction
 
 // ── State ──────────────────────────────────────────────────────────────
 reg  signed [ACCLENGTH-1:0]  sigma [0:ORDER-1];
-// Combinational comparator: the Pascal-coefficient NTF derivation
-// assumes a zero-delay quantizer (the only z⁻¹s in the loop come
-// from the integrators themselves). Registering the comparator adds
-// an extra z⁻¹ in the feedback path, which destabilizes the
-// 3rd-order modulator for *any* input — the integrators run away
-// to register-saturation in microseconds and the bitstream becomes
-// noise. So we take the sign combinationally and only register the
-// pad output `dout`.
-wire q_bit = ~sigma[ORDER-1][ACCLENGTH-1];   // sign bit (1 = sigma >= 0)
+
+// ── Quantizer-input TPDF dither ────────────────────────────────────────
+// Dither is summed at the COMPARATOR input rather than at the loop
+// input. Two reasons:
+//
+//  - At the comparator, dither sees the noise transfer function
+//    NTF = (1−z⁻¹)^ORDER, so the audio-band component is removed
+//    exactly the same way as quantization noise. We can therefore
+//    use much larger dither without raising the audio-band noise
+//    floor — and large dither is what actually breaks the modulator
+//    out of pattern-locked limit cycles near rational inputs (zero,
+//    ±FS/2, etc.). Loop-input dither sees STF ≈ 1 and reaches the
+//    audio output 1:1, so it has to be tiny and consequently fails
+//    to randomize the quantizer decision.
+//
+//  - The two integrators in front of the quantizer low-pass-filter
+//    any dither injected at the loop input — by the time it reaches
+//    the comparator the high-frequency content (where decorrelation
+//    actually happens) is gone.
+//
+// TPDF = sum of two independent uniform sources → triangular PDF,
+// the optimal dither shape for a quantizer (1st-order moment of the
+// quantization error becomes signal-independent).
+localparam DITHER_BITS = 24;
+wire signed [DITHER_BITS:0] dither_tpdf =
+        $signed(dither1[DITHER_BITS-1:0]) + $signed(dither2[DITHER_BITS-1:0]);
+
+// Comparator: sign-extract on (last integrator + dither). Combinational
+// — the Pascal-coefficient NTF derivation assumes a zero-delay
+// quantizer (the only z⁻¹s in the loop come from the integrators
+// themselves). Registering the comparator adds an extra z⁻¹ in the
+// feedback path, which destabilises the 3rd-order modulator for *any*
+// input — the integrators run away to register-saturation in
+// microseconds and the bitstream becomes noise. So we take the sign
+// combinationally and only register the pad output `dout`.
+wire signed [ACCLENGTH-1:0]  sigma_last_dith =
+        sigma[ORDER-1] + $signed(dither_tpdf);
+wire q_bit = ~sigma_last_dith[ACCLENGTH-1];   // sign bit (1 = sigma+dither >= 0)
 wire signed [ACCLENGTH-1:0]  v_full = q_bit ? up_inc : down_inc;
 
 reg  signed [WORDLENGTH-1:0] din_held = 0;
 assign din_held_debug = din_held;
-
-// ── Input dither (TPDF, ±2^DITHER_BITS) ────────────────────────────────
-localparam DITHER_BITS = 24;
-wire signed [DITHER_BITS:0] dither_tpdf =
-        $signed(dither1[DITHER_BITS-1:0]) + $signed(dither2[DITHER_BITS-1:0]);
 
 // ── Modulator ──────────────────────────────────────────────────────────
 integer k;
@@ -126,10 +150,9 @@ always @(posedge clk or posedge rst) begin
         if (dvalid)
             din_held <= din;
 
-        // Stage 0: input + dither, minus a₁·v
+        // Stage 0: input only (dither now injected at the quantizer).
         sigma[0] <= sigma[0]
                   + din_held
-                  + dither_tpdf
                   - coef_times_v(pascal_coef(ORDER, 0), v_full);
 
         // Stages 1..ORDER-1: previous integrator's value, minus aₖ₊₁·v

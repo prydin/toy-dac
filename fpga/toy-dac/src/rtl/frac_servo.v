@@ -57,7 +57,7 @@ module frac_servo #(
     //                                      ≈  100 k LSB / s slew
     //                                      ≈  40 Hz / s frequency-chirp ceiling
     // (1 LSB of step = Fs_out/2^32 ≈ 3.93e-4 Hz of consumed-rate change)
-    parameter integer STEP_SLEW_PERIOD   = 1024,
+    parameter integer STEP_SLEW_PERIOD   = 4096,
 
     // LED / `adjust` quantisation. The output `adjust` pulse fires
     // only when the smoothed step crosses an N-LSB boundary, so the
