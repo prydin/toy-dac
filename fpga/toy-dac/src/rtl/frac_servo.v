@@ -25,8 +25,25 @@
 //
 // Update rate / gains
 // ───────────────────
-//   The servo updates at UPDATE_HZ (default 100 Hz). Defaults are
-//   KP = 2048, KI = 64.  Sensitivity:
+//   The servo updates at UPDATE_HZ (default 2 Hz). Defaults are
+//   KP = 8, KI = 0 — a pure-proportional loop. The plant is a pure
+//   integrator (FIFO depth = ∫rate_error), so:
+//
+//     P-only on an integrator plant:  loop gain = KP/s
+//                                     → first-order exponential decay,
+//                                     → no overshoot by construction.
+//     Steady-state error is zero because the plant itself integrates:
+//     any nonzero step adjustment drifts the fill, so the only stable
+//     equilibrium is err = 0.
+//
+//   (A pure-integral controller on an integrator plant gives loop
+//   gain KI/s² — a harmonic oscillator, marginally stable, rings
+//   forever. Don't do that.)
+//
+//   The slew-rate limiter below dominates the closed-loop dynamics,
+//   so the response time is set by STEP_SLEW_PERIOD, not by KP.
+//
+//   Sensitivity:
 //     ∂Fs_consumed / ∂step  =  Fs_out / 2^32
 //   For Fs_out = 1.6875 MHz that's ≈ 3.93·10⁻⁴ Hz per step-LSB, so
 //   STEP_ADJ_MAX = ±2^24 covers about ±6.6 kHz of input-rate
@@ -40,10 +57,10 @@ module frac_servo #(
     parameter integer FIFO_DEPTH         = 64,
     parameter integer SETPOINT           = FIFO_DEPTH/2,
     parameter integer MCLK_HZ            = 108_000_000,
-    parameter integer UPDATE_HZ          = 100,
-    parameter integer KP                 = 2048,
-    parameter integer KI                 = 64,
-    parameter integer ERR_DEADBAND       = 1,
+    parameter integer UPDATE_HZ          = 2,
+    parameter integer KP                 = 8,
+    parameter integer KI                 = 0,
+    parameter integer ERR_DEADBAND       = 2,
     parameter signed [31:0] STEP_ADJ_MAX =  32'sd16777216,   //  +2^24
     parameter signed [31:0] STEP_ADJ_MIN = -32'sd16777216,   //  -2^24
 
@@ -53,9 +70,9 @@ module frac_servo #(
     // STEP_SLEW_PERIOD mclks. This converts every PI "jump" into a
     // smooth ramp, eliminating the FM impulse that an instantaneous
     // step change would inject around the audio carrier.
-    //   default 1024 mclks / LSB @ 108 MHz  ≈  10.5 µs per LSB
-    //                                      ≈  100 k LSB / s slew
-    //                                      ≈  40 Hz / s frequency-chirp ceiling
+    //   default 4096 mclks / LSB @ 108 MHz ≈  38 µs per LSB
+    //                                      ≈  26 k LSB / s slew
+    //                                      ≈  10 Hz / s frequency-chirp ceiling
     // (1 LSB of step = Fs_out/2^32 ≈ 3.93e-4 Hz of consumed-rate change)
     parameter integer STEP_SLEW_PERIOD   = 4096,
 
@@ -195,20 +212,61 @@ module frac_servo #(
         end
     end
 
-    // ── Quantised `adjust` pulse for the LED ────────────────────
-    // Pulse only when the smoothed step crosses an ADJUST_QUANTUM
-    // boundary in either direction. With slow drift this is a
-    // sub-Hz event; in steady-state lock it never fires.
-    wire signed [31:0] pi_smooth_q     = pi_smooth >>> ADJUST_QUANTUM_LOG2;
+    // ── `adjust` LED: hunting indicator ─────────────────────────
+    // Lights only when pi_smooth_q REVERSES direction (real hunting),
+    // not while it monotonically slews toward a new target. A long
+    // monotonic ramp — which is the normal lock-acquisition behaviour
+    // when the slew limiter is slow — leaves the LED dark.
+    //
+    // State machine on the sign of (pi_smooth_q − prev):
+    //   last_dir ∈ {+1, −1, unknown}
+    //   When we see motion, compare its sign to last_dir.
+    //     same / unknown  → not hunting, just update last_dir.
+    //     opposite        → reversal: pulse adjust, update last_dir.
+    //   No motion does not change last_dir, so a brief pause followed
+    //   by resumed motion in the same direction stays "not hunting".
+    //
+    // Each reversal stretches the LED for HOLD_CYCLES so it's visible.
+    wire signed [31:0] pi_smooth_q      = pi_smooth >>> ADJUST_QUANTUM_LOG2;
     reg  signed [31:0] pi_smooth_q_prev = 32'sd0;
+    reg                last_dir         = 1'b0;   // 0 = down, 1 = up
+    reg                last_dir_valid   = 1'b0;
+
+    // Pulse stretch: ~100 ms at MCLK_HZ.
+    localparam integer HOLD_CYCLES = MCLK_HZ / 10;
+    localparam integer HOLD_W      = $clog2(HOLD_CYCLES + 1);
+    reg [HOLD_W-1:0]   hold_cnt    = {HOLD_W{1'b0}};
+
+    wire moved_up   = (pi_smooth_q >  pi_smooth_q_prev);
+    wire moved_down = (pi_smooth_q <  pi_smooth_q_prev);
+    wire reversal   = last_dir_valid &&
+                      (( moved_up   && last_dir == 1'b0) ||
+                       ( moved_down && last_dir == 1'b1));
 
     always @(posedge clk) begin
         if (rst || !enable) begin
             pi_smooth_q_prev <= 32'sd0;
+            last_dir         <= 1'b0;
+            last_dir_valid   <= 1'b0;
+            hold_cnt         <= {HOLD_W{1'b0}};
             adjust           <= 1'b0;
         end else begin
             pi_smooth_q_prev <= pi_smooth_q;
-            adjust           <= (pi_smooth_q != pi_smooth_q_prev);
+
+            if (moved_up) begin
+                last_dir       <= 1'b1;
+                last_dir_valid <= 1'b1;
+            end else if (moved_down) begin
+                last_dir       <= 1'b0;
+                last_dir_valid <= 1'b1;
+            end
+
+            if (reversal)
+                hold_cnt <= HOLD_CYCLES[HOLD_W-1:0];
+            else if (hold_cnt != {HOLD_W{1'b0}})
+                hold_cnt <= hold_cnt - 1'b1;
+
+            adjust <= (hold_cnt != {HOLD_W{1'b0}});
         end
     end
 

@@ -1,0 +1,3 @@
+clock_clk_wiz.v,verilog,xil_defaultlib,c:/proj/toy-dac/fpga/toy-dac/toy-dac.gen/sources_1/ip/clock_2/clock_clk_wiz.v,incdir="c:/proj/toy-dac/fpga/toy-dac/toy-dac.gen/sources_1/ip/clock_2"incdir="../../../../toy-dac.gen/sources_1/ip/clock_2"
+clock.v,verilog,xil_defaultlib,c:/proj/toy-dac/fpga/toy-dac/toy-dac.gen/sources_1/ip/clock_2/clock.v,incdir="c:/proj/toy-dac/fpga/toy-dac/toy-dac.gen/sources_1/ip/clock_2"incdir="../../../../toy-dac.gen/sources_1/ip/clock_2"
+glbl.v,Verilog,xil_defaultlib,glbl.v

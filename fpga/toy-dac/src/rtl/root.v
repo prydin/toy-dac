@@ -426,7 +426,7 @@ asrc #(
                                                    // can only see samples [C-63, C] of the most recent 128,
                                                    // so safe range is samp_avail in [1, 65]. Old setpoint 64
                                                    // sat at the upper edge -> 1-sample overshoot caused stale-read clicks.
-    .SERVO_UPDATE_HZ(100),                         // 2000 was unstable in HW; 100 Hz convergence is plenty
+    .SERVO_UPDATE_HZ(2),                           // slow pure-I loop; see frac_servo.v header
     .STEP_NOMINAL   (STEP_NOMINAL_44_1)
 ) asrc_inst (
     .clk                 (mclk),
@@ -482,7 +482,7 @@ assign led0_b = led0_b_pulse;
 wire [31:0] dds_raw;
 wire        dds_valid;
 
-dds_compiler_0 test_signal (
+dds test_signal (
     .aclk(mclk),
     .m_axis_data_tvalid(dds_valid),
     .m_axis_data_tdata(dds_raw)

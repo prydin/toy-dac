@@ -1,5 +1,0 @@
-vhdl xil_defaultlib  \
-"../../../../toy-dac.gen/sources_1/ip/dds_compiler_0/sim/dds_compiler_0.vhd" \
-
-# Do not sort compile order
-nosort
