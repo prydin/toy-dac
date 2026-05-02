@@ -1,14 +1,26 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-// Asynchronous Sample-Rate Conversion wrapper (fractional-phase).
+// Asynchronous Sample-Rate Conversion wrapper (fractional-phase),
+// followed by a 4× halfband interpolator cascade.
 //
-// Architecture (replaces the older NCO + AXI-loop interpolator path):
+// Architecture:
 //
-//   I2S in ─► fractional_asrc L ─┐
-//                                ├─► dac_left / dac_right @ Fs_out
-//   I2S in ─► fractional_asrc R ─┘    (with dac_dvalid on a fixed
-//                                      mclk/OUT_DIV grid)
+//   I2S in ─► fractional_asrc L ─► halfband_up2 ─► halfband_up2 ─► dac_left
+//                                  (×2)            (×2)
+//   I2S in ─► fractional_asrc R ─► halfband_up2 ─► halfband_up2 ─► dac_right
+//
+//   Engine output rate     = mclk / OUT_DIV          = 1.6875 MHz @ OUT_DIV=64
+//   After 1st halfband     = mclk / (OUT_DIV/2)      = 3.375  MHz
+//   After 2nd halfband     = mclk / (OUT_DIV/4)      = 6.75   MHz   ← dac_dv_*
+//
+// Each halfband is a symmetric 11-tap FIR (3 DSP48), with the
+// passthrough "odd" branch implemented as a pure delayed sample
+// (h[5] = 1.0). The cascade quadruples the rate at which the ΔΣ
+// modulator's `din_held` updates, which lets its noise-shaping
+// filter act on the signal at much finer time granularity than
+// when fed a 1.6875 MHz step-held input.
+//
 //                ▲   ▲
 //                │   │ step (Q0.32)
 //                │   └── frac_servo (PI loop on samples_avail)
@@ -35,13 +47,6 @@
 //     elasticity buffer)
 //   - external interpolator AXI loop (src_*/interp_*)
 //   - output rate-leveling FIFOs
-//
-// Bring-up note
-// ─────────────
-// This rewrite is the start of Phase 3. `root.v` is updated in
-// Phase 4 to match the new port set; until then this module will
-// not elaborate inside the existing project. Validate via the
-// dedicated stereo testbench instead.
 
 module asrc #(
     parameter integer WIDTH         = 32,
@@ -198,11 +203,72 @@ module asrc #(
         .dbg_samples_avail(samp_avail_r)
     );
 
-    // ── Outputs ─────────────────────────────────────────────────
-    assign dac_left            = dout_l;
-    assign dac_right           = dout_r;
-    assign dac_dv_left         = dvalid_l;
-    assign dac_dv_right        = dvalid_r;
+    // ── 4× halfband interpolator cascade per channel ─────────
+    // Two stages: 1.6875 MHz → 3.375 MHz → 6.75 MHz (with OUT_DIV=64).
+    // Each stage timed by its IN_PERIOD_MCLK so its two outputs per
+    // input sit evenly spaced over the input period.
+    wire signed [WIDTH-1:0] h1_l_data, h1_r_data;
+    wire                    h1_l_dv,   h1_r_dv;
+    wire signed [WIDTH-1:0] h2_l_data, h2_r_data;
+    wire                    h2_l_dv,   h2_r_dv;
+
+    halfband_up2 #(
+        .DATA_W         (WIDTH),
+        .IN_PERIOD_MCLK (OUT_DIV)
+    ) hb1_l (
+        .clk      (clk),
+        .rst      (rst),
+        .enable   (enable),
+        .in_valid (dvalid_l),
+        .in_data  (dout_l),
+        .out_valid(h1_l_dv),
+        .out_data (h1_l_data)
+    );
+
+    halfband_up2 #(
+        .DATA_W         (WIDTH),
+        .IN_PERIOD_MCLK (OUT_DIV)
+    ) hb1_r (
+        .clk      (clk),
+        .rst      (rst),
+        .enable   (enable),
+        .in_valid (dvalid_r),
+        .in_data  (dout_r),
+        .out_valid(h1_r_dv),
+        .out_data (h1_r_data)
+    );
+
+    halfband_up2 #(
+        .DATA_W         (WIDTH),
+        .IN_PERIOD_MCLK (OUT_DIV / 2)
+    ) hb2_l (
+        .clk      (clk),
+        .rst      (rst),
+        .enable   (enable),
+        .in_valid (h1_l_dv),
+        .in_data  (h1_l_data),
+        .out_valid(h2_l_dv),
+        .out_data (h2_l_data)
+    );
+
+    halfband_up2 #(
+        .DATA_W         (WIDTH),
+        .IN_PERIOD_MCLK (OUT_DIV / 2)
+    ) hb2_r (
+        .clk      (clk),
+        .rst      (rst),
+        .enable   (enable),
+        .in_valid (h1_r_dv),
+        .in_data  (h1_r_data),
+        .out_valid(h2_r_dv),
+        .out_data (h2_r_data)
+    );
+
+    // ── Outputs ──────────────────────────────────────
+    assign dac_left            = h2_l_data;
+    assign dac_right           = h2_r_data;
+    assign dac_dv_left         = h2_l_dv;
+    assign dac_dv_right        = h2_r_dv;
     assign dbg_samples_avail_l = samp_avail_l;
     assign dbg_samples_avail_r = samp_avail_r;
     assign in_consumed         = in_consumed_l;

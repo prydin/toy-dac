@@ -58,9 +58,9 @@ module frac_servo #(
     parameter integer SETPOINT           = FIFO_DEPTH/2,
     parameter integer MCLK_HZ            = 108_000_000,
     parameter integer UPDATE_HZ          = 2,
-    parameter integer KP                 = 8,
+    parameter integer KP                 = 1,
     parameter integer KI                 = 0,
-    parameter integer ERR_DEADBAND       = 2,
+    parameter integer ERR_DEADBAND       = 16,
     parameter signed [31:0] STEP_ADJ_MAX =  32'sd16777216,   //  +2^24
     parameter signed [31:0] STEP_ADJ_MIN = -32'sd16777216,   //  -2^24
 
@@ -74,7 +74,7 @@ module frac_servo #(
     //                                      ≈  26 k LSB / s slew
     //                                      ≈  10 Hz / s frequency-chirp ceiling
     // (1 LSB of step = Fs_out/2^32 ≈ 3.93e-4 Hz of consumed-rate change)
-    parameter integer STEP_SLEW_PERIOD   = 4096,
+    parameter integer STEP_SLEW_PERIOD   = 16384,
 
     // LED / `adjust` quantisation. The output `adjust` pulse fires
     // only when the smoothed step crosses an N-LSB boundary, so the

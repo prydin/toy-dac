@@ -111,9 +111,18 @@ reg  signed [ACCLENGTH-1:0]  sigma [0:ORDER-1];
 // TPDF = sum of two independent uniform sources → triangular PDF,
 // the optimal dither shape for a quantizer (1st-order moment of the
 // quantization error becomes signal-independent).
-localparam DITHER_BITS = 24;
-wire signed [DITHER_BITS:0] dither_tpdf =
-        $signed(dither1[DITHER_BITS-1:0]) + $signed(dither2[DITHER_BITS-1:0]);
+//
+// IMPORTANT — magnitude: dither must be at least ±½ LSB of the
+// QUANTIZER (not of the data word) to actually randomize comparator
+// decisions. The quantizer step here is 2·up_inc = 2^(WORDLENGTH+1),
+// so each uniform source needs to span ±2^WORDLENGTH and the TPDF
+// sum spans ±2^(WORDLENGTH+1) — i.e. one full quantizer LSB peak
+// per side, the textbook value. Using narrower dither leaves the
+// quantizer in pattern-locked operation and (worse) the small
+// signal-correlated perturbation can actually *increase* spur
+// power. We use the full 32-bit LFSR words as $signed.
+wire signed [WORDLENGTH:0] dither_tpdf =
+        $signed(dither1[WORDLENGTH-1:0]) + $signed(dither2[WORDLENGTH-1:0]);
 
 // Comparator: sign-extract on (last integrator + dither). Combinational
 // — the Pascal-coefficient NTF derivation assumes a zero-delay
