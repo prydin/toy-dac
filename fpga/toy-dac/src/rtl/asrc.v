@@ -57,9 +57,9 @@ module asrc #(
     parameter integer MCLK_HZ       = 108_000_000,
     parameter integer OUT_DIV       = 64,                 // Fs_out = mclk / OUT_DIV
     // PI servo target: depth of the engine's internal ring buffer.
-    // Safe operating range is [1, SAMP_DEPTH - TAPS] = [1, 64];
-    // mid-range is the natural setpoint.
-    parameter integer SAMP_SETPOINT = TAPS,        // mid-depth of 2*TAPS ring
+    // Ring is 4*TAPS = 256 deep; safe operating range is
+    // [1, SAMP_DEPTH - TAPS + 1] = [1, 193]; mid is the natural setpoint.
+    parameter integer SAMP_SETPOINT = 2 * TAPS,    // mid-depth of 4*TAPS ring
     // PI servo update rate. 100 Hz is fine in real hardware; bumping
     // to 1000+ Hz makes simulation testbenches converge in ms.
     parameter integer SERVO_UPDATE_HZ = 100,
@@ -123,10 +123,10 @@ module asrc #(
     wire [31:0] step_eff;
 
     // Servo only sees the low bits of samples_avail (it cannot exceed
-    // the ring-buffer depth SAMP_DEPTH = 2*TAPS in normal operation,
+    // the ring-buffer depth SAMP_DEPTH = 4*TAPS in normal operation,
     // but cap defensively so a transient overshoot can't garble the
     // servo's error math).
-    localparam integer SAMP_DEPTH = 2 * TAPS;
+    localparam integer SAMP_DEPTH = 4 * TAPS;
     wire [$clog2(SAMP_DEPTH+1)-1:0] samp_avail_clamped =
         (samp_avail_l > SAMP_DEPTH[15:0]) ? SAMP_DEPTH[$clog2(SAMP_DEPTH+1)-1:0]
                                           : samp_avail_l[$clog2(SAMP_DEPTH+1)-1:0];

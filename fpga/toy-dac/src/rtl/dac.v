@@ -49,7 +49,7 @@ end
 // Integrators need headroom over the input word. With Pascal coefficients
 // the worst-case stage gain in a stable 3rd-order is roughly 4×; 12 guard
 // bits is comfortable.
-localparam GUARD_BITS = 10;
+localparam GUARD_BITS = 12;
 localparam ACCLENGTH  = WORDLENGTH + GUARD_BITS;
 
 // Quantizer levels in ACCLENGTH-bit signed space: ±2^WORDLENGTH.

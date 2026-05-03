@@ -52,9 +52,12 @@
 // and accumulator are never contended. Wrapper must guarantee strobes
 // arrive no closer than TAPS cycles apart; closer strobes are dropped.
 //
-// Sample ring buffer is 2*TAPS deep so that an input write during a MAC
-// (or its overlap with the next MAC) never lands in the active read
-// window.
+// Sample ring buffer is 4*TAPS deep (= 256 for TAPS=64). One TAPS-deep
+// span is reserved as FIR history (samples_avail must stay <= SAMP_DEPTH-TAPS
+// to avoid stale-BRAM reads), the remaining 3*TAPS span is elasticity for
+// the rate servo. Setpoint sits in the middle of the elasticity span
+// (samples_avail = SAMP_DEPTH/2) so drift in either direction has
+// SAMP_DEPTH/4 = 64 samples of slack before the servo runs out of room.
 
 module fractional_asrc #(
     parameter integer DATA_W      = 32,
@@ -98,12 +101,16 @@ module fractional_asrc #(
     // ----------------------------------------------------------------
     localparam integer PHASE_W      = $clog2(PHASES);
     localparam integer TAP_W        = $clog2(TAPS);
-    localparam integer SAMP_DEPTH   = 2 * TAPS;
+    // Ring buffer depth. 4*TAPS (= 256 for TAPS=64) gives 3*TAPS samples
+    // of elasticity around the servo setpoint, enough for ~1 minute of
+    // typical (50 ppm) crystal drift before reaching a rail.
+    localparam integer SAMP_DEPTH   = 4 * TAPS;
     localparam integer SAMP_W       = $clog2(SAMP_DEPTH);
     // Prime-jump target for consumed_cnt. Lands samples_avail at
-    // SAMP_DEPTH/4 (= 32 for SAMP_DEPTH=128), the mid-safe-range
-    // matching the wrapper's SAMP_SETPOINT.
-    localparam integer PRIME_CONSUMED = SAMP_DEPTH - (SAMP_DEPTH/4);
+    // SAMP_DEPTH/2 (= 128 for SAMP_DEPTH=256) -- mid of the safe
+    // operating range [1, SAMP_DEPTH-TAPS+1] = [1, 193]. Matches the
+    // wrapper's SAMP_SETPOINT so the servo starts inside its deadband.
+    localparam integer PRIME_CONSUMED = SAMP_DEPTH - (SAMP_DEPTH/2);
     localparam integer COEFF_DEPTH  = (PHASES + 1) * TAPS;
     localparam integer COEFF_AW     = $clog2(COEFF_DEPTH);
     localparam integer PROD_W       = COEFF_W + DATA_W;
@@ -270,13 +277,12 @@ module fractional_asrc #(
 
             // ---- Prime gate: wait for full buffer, then jump
             //      consumed_cnt forward so samples_avail starts in
-            //      the safe-range middle (SAMP_DEPTH/2 - SAMP_DEPTH/4 = TAPS/2 = 32 by
-            //      default). The FIR window must read written slots, so
-            //      consumed_cnt must be at least TAPS-1 past zero. We pick
-            //      consumed_cnt = SAMP_DEPTH - SAMP_DEPTH/4 = 96 -> samp_avail = 32,
-            //      which leaves samp_avail comfortably mid-range and matches
-            //      the wrapper's SAMP_SETPOINT=32 so the servo starts inside
-            //      its deadband.
+            //      the middle of the safe range. SAMP_DEPTH=4*TAPS=256:
+            //      safe range is samples_avail in [1, 193]; we land
+            //      at 128 (= SAMP_DEPTH/2) which matches the wrapper's
+            //      SAMP_SETPOINT so the servo starts inside its deadband.
+            //      The first MAC reads slots [128, 127, ..., 65], all
+            //      written during the prime fill.
             if (!primed && samples_in_cnt >= SAMP_DEPTH) begin
                 primed       <= 1'b1;
                 consumed_cnt <= PRIME_CONSUMED[15:0];
@@ -324,7 +330,7 @@ module fractional_asrc #(
                 end else begin
                     s0_tap    <= s0_tap + 1'b1;
                 end
-            end else begin
+            end else begin 
                 s2_v     <= 1'b0;
                 s2_first <= 1'b0;
                 s2_last  <= 1'b0;
@@ -333,7 +339,7 @@ module fractional_asrc #(
 
             // ---- S3: latch sample + lerp (BRAM/samp data valid) ----
             if (s3_v) begin
-                samp_d1     <= samp_q;
+                samp_d1     <= samp_q; 
                 coeff_blend <= blended[COEFF_W-1:0];
             end
 

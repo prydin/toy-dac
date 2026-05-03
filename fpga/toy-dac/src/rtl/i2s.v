@@ -94,7 +94,7 @@ always @(posedge clk) begin
         shift_left <= 0;
         shift_right <= 0;
         input_active <= 1'b0;
-    end else if (bclk_pos_edge) begin   // Detect riding edge of bclk
+    end else if (bclk_pos_edge) begin   // Detect rising edge of bclk
         if (lrclk_sync == 0) begin                // Left channel
             shift_left  <= {shift_left[WORDLENGTH-2:0], din_sync};   // Shift in new bit
         end else begin                        // Right channel
