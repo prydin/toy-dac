@@ -1,3 +1,37 @@
+`timescale 1ns / 1ps
+`default_nettype none
+
+// top
+// ───
+// Top-level wrapper for the toy-DAC FPGA design (Spartan-7 on a
+// CMOD-S7 board, driven from a 12 MHz crystal).
+//
+// Signal flow (MODE_I2S):
+//
+//   bclk/lrclk/din ─► i2s ─► asrc (fractional-phase resampler) ─► dac ×2 (ΔΣ) ─► pads
+//
+// The MMCM in `clock` produces a 108 MHz mclk that drives every
+// internal block. `rate_detect` + `rate_manager` watch the incoming
+// I2S frame rate and configure the ASRC's nominal fractional step.
+// The `asrc` module owns its own input ring buffer + polyphase FIR
+// banks and emits stereo samples on a fixed mclk/OUT_DIV grid (1.6875
+// MHz @ OUT_DIV=64). The two `dac` instances run a single-bit CIFB
+// ΔΣ modulator each and drive an LVDS-style +/− pair (plus a
+// duplicated "_fast" pair on the PMOD).
+//
+// Other modes (cycled through with btn[0]):
+//   MODE_DDS — internal 1 kHz DDS test tone
+//   MODE_DC  — fixed DC level (~1/1000 FS) for offset/calibration
+//   MODE_OFF — zero output
+//
+// Bypass switch (`bypass` pin tied HIGH for A/B testing) routes raw
+// I2S samples directly to the DAC, skipping the ASRC entirely —
+// useful as a reference path during bring-up.
+//
+// Most of the file is glue + diagnostics (debug pin probes,
+// FIFO-fill thermometer LEDs, dither RNGs, button debounce, etc.).
+// Functional core is just the `i2s` → `asrc` → `dac` chain.
+
 module top(
     input wire clk,             // 12MHz clock from crystal
     output wire dac_out_l,      // DAC delta/sigma out (+)

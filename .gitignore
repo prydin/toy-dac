@@ -23,3 +23,5 @@ kicad/dac/dac-backups/dac-2026-04-15_193132.zip
 /fpga/toy-dac/toy-dac.srcs
 /fpga/toy-dac/toydac.ip_user_files
 /fpga/toy-dac/toy-dac.ip_user_files
+*.qraw
+spice/output.qopraw

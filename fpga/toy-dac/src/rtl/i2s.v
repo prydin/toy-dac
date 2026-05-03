@@ -1,3 +1,31 @@
+`timescale 1ns / 1ps
+`default_nettype none
+
+// i2s
+// ───
+// I2S receiver. Synchronizes the asynchronous bclk / lrclk / din
+// pins to the local mclk domain via 2-FF synchronizers (`flop_sync`,
+// defined below), shifts data bits in on each bclk rising edge, and
+// emits one signed sample per channel per audio frame.
+//
+// Output handshake follows AXI-Stream tvalid/tready conventions:
+// `*_valid` rises when a new sample is latched and stays HIGH until
+// the corresponding `*_ready` accepts it (clearing it on the next
+// cycle). With both ready inputs tied HIGH the valid lines collapse
+// to 1-cycle accept pulses, which is what the downstream fractional
+// `asrc` wants.
+//
+// I2S timing convention (standard — not left-justified):
+//   * Data bit is launched on bclk falling edge by the source.
+//   * MSB of each channel arrives ONE bclk after the lrclk transition
+//     (the "one-bit delay" rule). The shift register is left-shifted
+//     by one extra position on output to undo this.
+//
+// Edge-pulse outputs (`bclk_pos_edge`, `lrclk_pos_edge`, etc.) are
+// exposed so callers (e.g. rate_detect, frame-integrity probes in
+// root.v) can reuse the same synchronizers instead of re-syncing
+// the raw pins themselves.
+
 module flop_sync (
     input wire clk,
     input wire rst,

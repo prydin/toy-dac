@@ -1,3 +1,18 @@
+`timescale 1ns / 1ps
+`default_nettype none
+
+// random
+// ──────
+// Xoroshiro128+ PRNG. Two 64-bit state words seeded from SEED1 /
+// SEED2 parameters (default seeds are non-zero — zero state is the
+// fixed point of the algorithm and would lock the generator at 0).
+// One 32-bit signed sample is emitted per clock; the lower 32 bits
+// of the 64-bit output are returned, which is fine for use as TPDF
+// dither (we only need decorrelated, white-spectrum noise).
+//
+// Used by `dac.v` to drive the comparator-side dither inputs. Two
+// independent instances are summed there to form a triangular PDF.
+
 module random #(
     parameter SEED1 = 64'h0123456789abcdef,
     parameter SEED2 = 64'hfedcba9876543210

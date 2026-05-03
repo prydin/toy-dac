@@ -1,3 +1,6 @@
+`timescale 1ns / 1ps
+`default_nettype none
+
 // -----------------------------------------------------------------------------
 // dds — IP-free replacement for the Xilinx DDS Compiler instance.
 //

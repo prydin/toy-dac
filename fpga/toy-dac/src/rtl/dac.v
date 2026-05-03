@@ -3,29 +3,31 @@
 
 // CIFB ΔΣ modulator with one shared loop and one comparator.
 //
-// Structure for ORDER N:
+// Structure for ORDER N (N ∈ {1, 2}):
 //
-//   stage 0 :  σ₀[n+1] = σ₀[n] + (din+dither) − a₁·v
-//   stage k :  σₖ[n+1] = σₖ[n] +     σₖ₋₁[n] − aₖ₊₁·v   for k = 1..N-1
-//   v[n]    =  sign(σₙ₋₁[n])    (registered → one extra z⁻¹ in the loop)
+//   stage 0 :  σ₀[n+1] = σ₀[n] + din − a₁·v
+//   stage 1 :  σ₁[n+1] = σ₁[n] + σ₀[n] − a₂·v       (only if ORDER=2)
+//   v[n]    =  sign(σₙ₋₁[n] + dither)               (combinational)
 //
-// The aₖ are the Pascal-triangle weights C(N, k-1):
-//   ORDER=1 :  a = {1}            NTF = (1 − z⁻¹)¹  OBG=2  unconditionally stable
-//   ORDER=2 :  a = {1, 2}         NTF = (1 − z⁻¹)²  OBG=4  stable for |din| ≲ 0.9 FS
-//   ORDER=3 :  a = {1, 3, 3}      NTF = (1 − z⁻¹)³  OBG=8  *UNSTABLE* — single-bit
-//                                                          quantizer with this NTF
-//                                                          saturates the integrators
-//                                                          for any input incl. zero.
-//                                                          Verified in sim. Use ORDER=2.
+// Feedback coefficients (hard-coded — Pascal-triangle weights for
+// stacked-NTF-zeros-at-DC, the textbook maximally-flat shape):
+//   ORDER=1 :  a = {1}      NTF = (1 − z⁻¹)¹  OBG=2  unconditionally stable
+//   ORDER=2 :  a = {1, 2}   NTF = (1 − z⁻¹)²  OBG=4  stable for |din| ≲ 0.9 FS
 //
-// All aₖ are integers ≤ 3 → implemented as shift+add, no multipliers.
-// Quantizer feedback magnitude is up_inc = 2^WORDLENGTH (so q_fb is always
-// at full scale of the input word, matching the original interface).
+// (ORDER ≥ 3 with these coefficients is unstable on a single-bit
+//  quantizer — OBG=8 exceeds the Lee bound, integrators rail for any
+//  input including zero. Verified in sim. If a 3rd-order NTF is ever
+//  needed, the zeros must be moved off DC and/or a multi-bit
+//  quantizer used; that's a future redesign, not a parameter tweak.)
+//
+// All aₖ are 1 or 2 → implemented as shift, no multipliers.
+// Quantizer feedback magnitude is up_inc = 2^WORDLENGTH (so q_fb is
+// always at full scale of the input word).
 
 module dac #(
     parameter WORDLENGTH = 32,
-    // Modulator order. Supported: 1, 2, 3. See header for stability bounds.
-    parameter ORDER = 3
+    // Modulator order. Supported: 1 or 2. See header for stability bounds.
+    parameter ORDER = 2
 )(
     input  wire                          clk,
     input  wire                          rst,
@@ -33,61 +35,36 @@ module dac #(
     input  wire                          dvalid,
     input  wire [31:0]                   dither1,
     input  wire [31:0]                   dither2,
-    output reg                           dout = 0,
-    output wire signed [WORDLENGTH-1:0]  din_held_debug
+    output reg                           dout = 0
 );
 
 // ── Sanity check on ORDER ──────────────────────────────────────────────
 initial begin
-    if (ORDER < 1 || ORDER > 3) begin
-        $display("ERROR dac.v: ORDER=%0d not supported (must be 1, 2 or 3)", ORDER);
+    if (ORDER < 1 || ORDER > 2) begin
+        $display("ERROR dac.v: ORDER=%0d not supported (must be 1 or 2)", ORDER);
         $finish;
     end
 end
 
 // ── Bit widths ─────────────────────────────────────────────────────────
-// Integrators need headroom over the input word. With Pascal coefficients
-// the worst-case stage gain in a stable 3rd-order is roughly 4×; 12 guard
-// bits is comfortable.
-localparam GUARD_BITS = 12;
+// Integrators need headroom over the input word. Worst-case stage gain
+// in the stable 2nd-order Pascal modulator is 2×; 10 guard bits is
+// comfortable.
+localparam GUARD_BITS = 10;
 localparam ACCLENGTH  = WORDLENGTH + GUARD_BITS;
 
 // Quantizer levels in ACCLENGTH-bit signed space: ±2^WORDLENGTH.
 localparam signed [ACCLENGTH-1:0] up_inc   = $signed({{(GUARD_BITS-1){1'b0}}, 1'b1, {WORDLENGTH{1'b0}}});
 localparam signed [ACCLENGTH-1:0] down_inc = -up_inc;
 
-// ── Pascal feedback coefficients ───────────────────────────────────────
-// pascal_coef(N, k) = C(N, k) for k = 0 .. N-1
-function integer pascal_coef;
-    input integer order;
-    input integer k;
-    begin
-        case (order)
-            1: pascal_coef = 1;                       // {1}
-            2: pascal_coef = (k == 0) ? 1 : 2;        // {1, 2}
-            3: pascal_coef = (k == 0) ? 1 : 3;        // {1, 3, 3}
-            default: pascal_coef = 1;
-        endcase
-    end
-endfunction
-
-// Multiply v_full by a small integer coefficient (1, 2, or 3) using
-// shifts and adds only.
-function signed [ACCLENGTH-1:0] coef_times_v;
-    input integer                    coef;
-    input signed [ACCLENGTH-1:0]     v;
-    begin
-        case (coef)
-            1:       coef_times_v = v;
-            2:       coef_times_v = v <<< 1;
-            3:       coef_times_v = v + (v <<< 1);
-            default: coef_times_v = v;
-        endcase
-    end
-endfunction
+// 2·v, used as the second-stage feedback when ORDER==2. Just up_inc
+// shifted left by one (so ±2^(WORDLENGTH+1)).
+localparam signed [ACCLENGTH-1:0] up_inc_x2   = up_inc <<< 1;
+localparam signed [ACCLENGTH-1:0] down_inc_x2 = -up_inc_x2;
 
 // ── State ──────────────────────────────────────────────────────────────
-reg  signed [ACCLENGTH-1:0]  sigma [0:ORDER-1];
+reg  signed [ACCLENGTH-1:0]  sigma0 = {ACCLENGTH{1'b0}};
+reg  signed [ACCLENGTH-1:0]  sigma1 = {ACCLENGTH{1'b0}};   // unused if ORDER==1
 
 // ── Quantizer-input TPDF dither ────────────────────────────────────────
 // Dither is summed at the COMPARATOR input rather than at the loop
@@ -103,9 +80,9 @@ reg  signed [ACCLENGTH-1:0]  sigma [0:ORDER-1];
 //    audio output 1:1, so it has to be tiny and consequently fails
 //    to randomize the quantizer decision.
 //
-//  - The two integrators in front of the quantizer low-pass-filter
-//    any dither injected at the loop input — by the time it reaches
-//    the comparator the high-frequency content (where decorrelation
+//  - The integrators in front of the quantizer low-pass-filter any
+//    dither injected at the loop input — by the time it reaches the
+//    comparator the high-frequency content (where decorrelation
 //    actually happens) is gone.
 //
 // TPDF = sum of two independent uniform sources → triangular PDF,
@@ -128,53 +105,44 @@ wire signed [WORDLENGTH:0] dither_tpdf =
 // — the Pascal-coefficient NTF derivation assumes a zero-delay
 // quantizer (the only z⁻¹s in the loop come from the integrators
 // themselves). Registering the comparator adds an extra z⁻¹ in the
-// feedback path, which destabilises the 3rd-order modulator for *any*
-// input — the integrators run away to register-saturation in
-// microseconds and the bitstream becomes noise. So we take the sign
+// feedback path, which would destabilise the loop. We take the sign
 // combinationally and only register the pad output `dout`.
-wire signed [ACCLENGTH-1:0]  sigma_last_dith =
-        sigma[ORDER-1] + $signed(dither_tpdf);
+wire signed [ACCLENGTH-1:0]  sigma_last     = (ORDER == 2) ? sigma1 : sigma0;
+wire signed [ACCLENGTH-1:0]  sigma_last_dith = sigma_last + $signed(dither_tpdf);
 wire q_bit = ~sigma_last_dith[ACCLENGTH-1];   // sign bit (1 = sigma+dither >= 0)
-wire signed [ACCLENGTH-1:0]  v_full = q_bit ? up_inc : down_inc;
+wire signed [ACCLENGTH-1:0]  v_full    = q_bit ? up_inc    : down_inc;
+wire signed [ACCLENGTH-1:0]  v_full_x2 = q_bit ? up_inc_x2 : down_inc_x2;
 
 reg  signed [WORDLENGTH-1:0] din_held = 0;
-assign din_held_debug = din_held;
 
 // ── Modulator ──────────────────────────────────────────────────────────
-integer k;
-integer init_j;
-
-initial begin
-    for (init_j = 0; init_j < ORDER; init_j = init_j + 1)
-        sigma[init_j] = 0;
-end
-
 always @(posedge clk or posedge rst) begin
     if (rst) begin
-        for (k = 0; k < ORDER; k = k + 1)
-            sigma[k] <= {ACCLENGTH{1'b0}};
+        sigma0   <= {ACCLENGTH{1'b0}};
+        sigma1   <= {ACCLENGTH{1'b0}};
         din_held <= {WORDLENGTH{1'b0}};
         dout     <= 1'b0;
     end else begin
         if (dvalid)
             din_held <= din;
 
-        // Stage 0: input only (dither now injected at the quantizer).
-        sigma[0] <= sigma[0]
-                  + din_held
-                  - coef_times_v(pascal_coef(ORDER, 0), v_full);
+        // Stage 0: σ₀ += din − a₁·v ; a₁ = 1 for both ORDER=1 and ORDER=2.
+        sigma0 <= sigma0 + din_held - v_full;
 
-        // Stages 1..ORDER-1: previous integrator's value, minus aₖ₊₁·v
-        for (k = 1; k < ORDER; k = k + 1)
-            sigma[k] <= sigma[k]
-                      + sigma[k-1]
-                      - coef_times_v(pascal_coef(ORDER, k), v_full);
+        // Stage 1 (only meaningful when ORDER=2):
+        //   σ₁ += σ₀ − 2·v
+        // For ORDER=1 we still clock sigma1, but it stays at zero
+        // because nothing reads it (sigma_last comes from sigma0)
+        // and the synthesizer will trim it.
+        if (ORDER == 2)
+            sigma1 <= sigma1 + sigma0 - v_full_x2;
 
         // Output the quantizer bit (registered for clean IOB launch)
-        dout  <= q_bit;
+        dout <= q_bit;
     end
 end
 
 endmodule
 
 `default_nettype wire
+

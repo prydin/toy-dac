@@ -1,3 +1,24 @@
+`timescale 1ns / 1ps
+`default_nettype none
+
+// rate_detect
+// ───────────
+// Measures the I2S sample rate by counting mclk cycles across
+// WINDOW_SIZE consecutive lrclk rising edges, then dividing the
+// total by WINDOW_SIZE (a power of two, so the divide is just a
+// right-shift). Emits the per-lrclk-period mclk count on `period`
+// together with a 1-cycle `rate_valid` strobe whenever a new
+// measurement window closes.
+//
+// Averaging across many edges suppresses single-edge jitter so
+// downstream code (`rate_manager`) can robustly classify the rate
+// into 32 / 44.1 / 48 kHz buckets. With WINDOW_SIZE = 256 the
+// window is ~5.8 ms @ 44.1 kHz — fast enough to react to source
+// changes, slow enough that crystal jitter washes out.
+//
+// `dvalid` is reserved for future use (currently tied HIGH by the
+// caller); the design only steps the counters on lrclk edges anyway.
+
 module rate_detect #(
     parameter WINDOW_SIZE = 256 // Number of clock cycles to measure between lrclk edges. But be power of 2.
 )(

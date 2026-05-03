@@ -1,8 +1,16 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+// debounce
+// ────────
+// Simple time-based switch debouncer. `btn_out` only follows
+// `btn_in` after the input has held a stable level for DEBOUNCE_MS
+// milliseconds (clocked off CLK_FREQ). Any glitch resets the
+// stability counter, so contact bounce (typically <5 ms on tactile
+// switches) is filtered out cleanly.
+
 module debounce #(
-    parameter CLK_FREQ = 54_000_000,
+    parameter CLK_FREQ = 108_000_000,
     parameter DEBOUNCE_MS = 20
 )(
     input  wire clk,

@@ -1,9 +1,25 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-// Simple monostable flip-flop 
+// mono_ff
+// ───────
+// Monostable (one-shot) flip-flop. A rising edge on `d` drives `q`
+// HIGH for a programmable delay, then `q` returns to 0. Delay is
+// specified in any combination of DELAY_MS / DELAY_US / DELAY_NS
+// and converted to clock cycles using FCLK at elaboration time.
+//
+// RESETTABLE selects retrigger behaviour:
+//   0 (default) — ignore further `d` edges while q is HIGH
+//                 (non-retriggerable: produces a fixed-width pulse).
+//   1           — reload the counter on every `d` edge, extending
+//                 the pulse (retriggerable: useful for "activity
+//                 LED" indicators).
+//
+// Used in root.v to stretch the ASRC servo's `adjust` strobe so the
+// blue status LED stays on long enough to see.
+
 module mono_ff #(
-    parameter FCLK = 54_000_000,
+    parameter FCLK = 108_000_000,
     parameter DELAY_MS = 0,
     parameter DELAY_US = 0,
     parameter DELAY_NS = 0,
