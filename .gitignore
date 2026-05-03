@@ -19,5 +19,7 @@ kicad/dac/dac-backups/dac-2026-04-15_193132.zip
 /fpga/toy-dac.gen
 /fpga/toy-dac.srcs
 /fpga/toy-dac/xsim.dir
-fpga/toy-dac/xvlog.pb
-fpga/toy-dac/toy-dac.srcs/utils_1/imports/synth_1/dac.dcp
+/fpga/toy-dac/xvlog.pb
+/fpga/toy-dac/toy-dac.srcs
+/fpga/toy-dac/toydac.ip_user_files
+/fpga/toy-dac/toy-dac.ip_user_files

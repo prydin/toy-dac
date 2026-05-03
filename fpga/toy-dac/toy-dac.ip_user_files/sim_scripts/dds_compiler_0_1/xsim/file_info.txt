@@ -1,2 +1,0 @@
-dds_compiler_0.vhd,vhdl,xil_defaultlib,../../../../toy-dac.gen/sources_1/ip/dds_compiler_0_1/sim/dds_compiler_0.vhd,
-glbl.v,Verilog,xil_defaultlib,glbl.v

@@ -1,3 +1,0 @@
-clock_clk_wiz.v,verilog,xil_defaultlib,../../../../toy-dac.gen/sources_1/ip/clock_1/clock_clk_wiz.v,incdir="../../../ipstatic"incdir="../../../ipstatic"
-clock.v,verilog,xil_defaultlib,../../../../toy-dac.gen/sources_1/ip/clock_1/clock.v,incdir="../../../ipstatic"incdir="../../../ipstatic"
-glbl.v,Verilog,xil_defaultlib,glbl.v

@@ -1,5 +1,0 @@
-xpm_cdc.sv,systemverilog,xpm,../../../../../../../Xilinx/Vivado/2024.2/data/ip/xpm/xpm_cdc/hdl/xpm_cdc.sv,incdir="c:/proj/toy-dac/fpga/toy-dac/toy-dac.gen/sources_1/ip/clock_2"incdir="../../../../toy-dac.gen/sources_1/ip/clock_2"
-xpm_VCOMP.vhd,vhdl,xpm,../../../../../../../Xilinx/Vivado/2024.2/data/ip/xpm/xpm_VCOMP.vhd,incdir="c:/proj/toy-dac/fpga/toy-dac/toy-dac.gen/sources_1/ip/clock_2"incdir="../../../../toy-dac.gen/sources_1/ip/clock_2"
-clock_clk_wiz.v,verilog,xil_defaultlib,c:/proj/toy-dac/fpga/toy-dac/toy-dac.gen/sources_1/ip/clock_2/clock_clk_wiz.v,incdir="c:/proj/toy-dac/fpga/toy-dac/toy-dac.gen/sources_1/ip/clock_2"incdir="../../../../toy-dac.gen/sources_1/ip/clock_2"
-clock.v,verilog,xil_defaultlib,c:/proj/toy-dac/fpga/toy-dac/toy-dac.gen/sources_1/ip/clock_2/clock.v,incdir="c:/proj/toy-dac/fpga/toy-dac/toy-dac.gen/sources_1/ip/clock_2"incdir="../../../../toy-dac.gen/sources_1/ip/clock_2"
-glbl.v,Verilog,xil_defaultlib,glbl.v
