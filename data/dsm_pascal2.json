@@ -1,0 +1,14 @@
+{
+  "order": 2,
+  "osr": 2700,
+  "form": "CIFB",
+  "hinf": null,
+  "f0": 0.0,
+  "opt": 0,
+  "umax": 0.9,
+  "_comment": "Pascal-2 in CIFB form: NTF = (1-z^-1)^2, equivalent loop coefficients.",
+  "a": [1.0, 2.0],
+  "b": [1.0, 2.0],
+  "g": [0.0],
+  "c": [1.0, 1.0]
+}

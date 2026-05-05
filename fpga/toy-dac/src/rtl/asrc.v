@@ -39,14 +39,6 @@
 // identical input rates and identical step, so their `samples_avail`
 // trajectories match.
 //
-// What was removed from the old `asrc`:
-//   - `nco` instance (PI servo + dual NCO ticks)
-//   - `tick_x100` and the 100x output rate generator
-//   - `out_primed` gate
-//   - input FIFOs (the engine's internal ring buffer is the
-//     elasticity buffer)
-//   - external interpolator AXI loop (src_*/interp_*)
-//   - output rate-leveling FIFOs
 
 module asrc #(
     parameter integer WIDTH         = 32,

@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 520" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <!-- Arrowhead -->
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#222"/>
+    </marker>
+    <marker id="arrowSmall" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#666"/>
+    </marker>
+
+    <!-- Block styles -->
+    <linearGradient id="gFilter" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#dde9ff"/>
+      <stop offset="100%" stop-color="#b6cdff"/>
+    </linearGradient>
+    <linearGradient id="gDsm" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#ffe5cc"/>
+      <stop offset="100%" stop-color="#ffc28a"/>
+    </linearGradient>
+    <linearGradient id="gAnalog" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#d6f5d6"/>
+      <stop offset="100%" stop-color="#9ed99e"/>
+    </linearGradient>
+    <linearGradient id="gIo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#eeeeee"/>
+      <stop offset="100%" stop-color="#cccccc"/>
+    </linearGradient>
+    <linearGradient id="gCtl" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#fff7c2"/>
+      <stop offset="100%" stop-color="#ffe57a"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Title -->
+  <text x="660" y="28" text-anchor="middle" font-size="18" font-weight="600" fill="#111">
+    Toy-DAC Signal Chain — Conceptual View
+  </text>
+  <text x="660" y="48" text-anchor="middle" font-size="12" fill="#555">
+    From digital audio input to analog output
+  </text>
+
+  <!-- Horizontal flow line baseline y = 220 -->
+
+  <!-- ============================================================ -->
+  <!-- 1. I2S input -->
+  <!-- ============================================================ -->
+  <g>
+    <rect x="20" y="180" width="120" height="80" rx="8" fill="url(#gIo)" stroke="#444"/>
+    <text x="80" y="208" text-anchor="middle" font-weight="600">I²S Receiver</text>
+    <text x="80" y="228" text-anchor="middle" font-size="11" fill="#333">stereo, 32-bit</text>
+    <text x="80" y="244" text-anchor="middle" font-size="11" fill="#333">async clock</text>
+  </g>
+  <!-- rate label -->
+
+  <!-- arrow -->
+  <line x1="140" y1="220" x2="200" y2="220" stroke="#222" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ============================================================ -->
+  <!-- 2. Fractional ASRC = anti-image filter + variable resampler -->
+  <!-- ============================================================ -->
+  <g>
+    <rect x="200" y="160" width="200" height="120" rx="8" fill="url(#gFilter)" stroke="#244"/>
+    <text x="300" y="184" text-anchor="middle" font-weight="600">Fractional Resampler</text>
+    <text x="300" y="200" text-anchor="middle" font-size="10" fill="#333">(polyphase interpolating LPF)</text>
+
+    <!-- Inner conceptual subblocks -->
+    <rect x="218" y="212" width="76" height="46" rx="4" fill="#fff" stroke="#666"/>
+    <text x="256" y="231" text-anchor="middle" font-size="11">256-phase</text>
+    <text x="256" y="246" text-anchor="middle" font-size="11">poly LPF</text>
+
+    <text x="306" y="240" text-anchor="middle" font-size="18" fill="#444">×</text>
+
+    <rect x="318" y="212" width="76" height="46" rx="4" fill="#fff" stroke="#666"/>
+    <text x="356" y="227" text-anchor="middle" font-size="10">α-blend</text>
+    <text x="356" y="241" text-anchor="middle" font-size="10">(linear</text>
+    <text x="356" y="253" text-anchor="middle" font-size="10">interp.)</text>
+
+    <!-- step input from servo -->
+  </g>
+
+  <!-- arrow -->
+  <line x1="400" y1="220" x2="460" y2="220" stroke="#222" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="430" y="210" text-anchor="middle" font-size="11" fill="#0a4" font-style="italic">1.6875 MHz</text>
+
+  <!-- ============================================================ -->
+  <!-- 3. Halfband upsampler stage 1 -->
+  <!-- ============================================================ -->
+  <g>
+    <rect x="460" y="180" width="130" height="80" rx="8" fill="url(#gFilter)" stroke="#244"/>
+    <text x="525" y="206" text-anchor="middle" font-weight="600">↑2 + LPF</text>
+    <text x="525" y="224" text-anchor="middle" font-size="10">15-tap halfband</text>
+  </g>
+
+  <!-- arrow -->
+  <line x1="590" y1="220" x2="640" y2="220" stroke="#222" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="615" y="210" text-anchor="middle" font-size="11" fill="#0a4" font-style="italic">3.375 MHz</text>
+
+  <!-- ============================================================ -->
+  <!-- 4. Halfband upsampler stage 2 -->
+  <!-- ============================================================ -->
+  <g>
+    <rect x="640" y="180" width="130" height="80" rx="8" fill="url(#gFilter)" stroke="#244"/>
+    <text x="705" y="206" text-anchor="middle" font-weight="600">↑2 + LPF</text>
+    <text x="705" y="224" text-anchor="middle" font-size="10">15-tap halfband</text>
+  </g>
+
+  <!-- arrow -->
+  <line x1="770" y1="220" x2="820" y2="220" stroke="#222" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="795" y="210" text-anchor="middle" font-size="11" fill="#0a4" font-style="italic">6.75 MHz</text>
+
+  <!-- ============================================================ -->
+  <!-- 5. Delta-Sigma modulator (1-bit) -->
+  <!-- ============================================================ -->
+  <g>
+    <rect x="820" y="160" width="220" height="120" rx="8" fill="url(#gDsm)" stroke="#532"/>
+    <text x="930" y="184" text-anchor="middle" font-weight="600">ΔΣ Modulator</text>
+    <text x="930" y="200" text-anchor="middle" font-size="10" fill="#333">1-bit, CIFB, order 3</text>
+
+    <!-- noise-shaping integrator chain glyph -->
+    <g transform="translate(836,212)">
+      <!-- summer -->
+      <circle cx="14" cy="22" r="11" fill="#fff" stroke="#444"/>
+      <text x="14" y="26" text-anchor="middle" font-size="13">Σ</text>
+      <text x="6"  y="14" font-size="9">+</text>
+      <text x="6"  y="36" font-size="9">−</text>
+      <line x1="14" y1="0" x2="14" y2="11" stroke="#444"/>
+      <text x="14" y="-2" text-anchor="middle" font-size="10">u</text>
+
+      <!-- chain of 3 integrators -->
+      <line x1="25" y1="22" x2="40" y2="22" stroke="#444" marker-end="url(#arrowSmall)"/>
+      <rect x="40" y="10" width="34" height="24" fill="#fff" stroke="#444"/>
+      <text x="57" y="26" text-anchor="middle" font-size="11">∫</text>
+
+      <line x1="74" y1="22" x2="86" y2="22" stroke="#444" marker-end="url(#arrowSmall)"/>
+      <rect x="86" y="10" width="34" height="24" fill="#fff" stroke="#444"/>
+      <text x="103" y="26" text-anchor="middle" font-size="11">∫</text>
+
+      <line x1="120" y1="22" x2="132" y2="22" stroke="#444" marker-end="url(#arrowSmall)"/>
+      <rect x="132" y="10" width="34" height="24" fill="#fff" stroke="#444"/>
+      <text x="149" y="26" text-anchor="middle" font-size="11">∫</text>
+
+      <!-- comparator -->
+      <line x1="166" y1="22" x2="180" y2="22" stroke="#444" marker-end="url(#arrowSmall)"/>
+      <polygon points="180,8 180,36 200,22" fill="#fff" stroke="#444"/>
+      <text x="175" y="45" font-size="10">cmp</text>
+
+      <!-- output -->
+      <line x1="200" y1="22" x2="186" y2="22" stroke="#444"/>
+      <line x1="200" y1="22" x2="220" y2="22" stroke="#222" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+      <!-- feedback loop: cmp out → summer minus -->
+      <path d="M200 22 V 56 H 14 V 33" fill="none" stroke="#444"/>
+      <text x="100" y="78" text-anchor="middle" font-size="10" fill="#555">±1 FS feedback (1-bit DAC)</text>
+    </g>
+  </g>
+
+  <!-- TPDF dither input -->
+  <g>
+    <rect x="858" y="118" width="100" height="32" rx="6" fill="url(#gCtl)" stroke="#864"/>
+    <text x="908" y="138" text-anchor="middle" font-size="11">TPDF dither</text>
+    <line x1="908" y1="150" x2="908" y2="195" stroke="#864" stroke-dasharray="3,3" marker-end="url(#arrowSmall)"/>
+    <text x="916" y="170" font-size="10" fill="#864">±½ LSB @ comparator</text>
+  </g>
+
+  <!-- arrow into power stage -->
+  <line x1="1056" y1="234" x2="1100" y2="234" stroke="#222" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="1078" y="225" text-anchor="middle" font-size="11" fill="#0a4" font-style="italic">108 MHz</text>
+  <text x="1078" y="252" text-anchor="middle" font-size="10" fill="#666">1-bit PDM</text>
+
+  <!-- ============================================================ -->
+  <!-- 6. Output stage / reconstruction -->
+  <!-- ============================================================ -->
+  <g>
+    <rect x="1100" y="180" width="200" height="120" rx="8" fill="url(#gAnalog)" stroke="#252"/>
+    <text x="1200" y="204" text-anchor="middle" font-weight="600">Output Stage</text>
+    <text x="1200" y="220" text-anchor="middle" font-size="10" fill="#333">FPGA pin → reconstruction</text>
+
+    <!-- subblocks -->
+    <rect x="1114" y="232" width="76" height="46" rx="4" fill="#fff" stroke="#666"/>
+    <text x="1152" y="251" text-anchor="middle" font-size="11">level-shift</text>
+    <text x="1152" y="265" text-anchor="middle" font-size="11">/ buffer</text>
+
+    <text x="1206" y="260" text-anchor="middle" font-size="16" fill="#444">→</text>
+
+    <rect x="1218" y="232" width="76" height="46" rx="4" fill="#fff" stroke="#666"/>
+    <!-- op-amp triangle -->
+    <polygon points="1226,242 1226,268 1248,255" fill="#fff" stroke="#444"/>
+    <text x="1232" y="258" font-size="9" fill="#444">−</text>
+    <text x="1232" y="250" font-size="9" fill="#444">+</text>
+    <text x="1273" y="252" text-anchor="middle" font-size="10">active</text>
+    <text x="1273" y="264" text-anchor="middle" font-size="10">low-pass</text>
+  </g>
+
+  <!-- final analog output -->
+  <line x1="1300" y1="240" x2="1310" y2="240" stroke="#222" stroke-width="2"/>
+  <circle cx="1313" cy="240" r="5" fill="none" stroke="#222"/>
+  <text x="1300" y="320" text-anchor="end" font-size="12" font-style="italic" fill="#272">analog audio out</text>
+
+  <!-- ============================================================ -->
+  <!-- Rate-servo control loop (below) -->
+  <!-- ============================================================ -->
+  <g>
+    <rect x="200" y="370" width="200" height="80" rx="8" fill="url(#gCtl)" stroke="#864"/>
+    <text x="300" y="394" text-anchor="middle" font-weight="600">Rate Servo</text>
+    <text x="300" y="411" text-anchor="middle" font-size="10" fill="#333">P controller, 100 Hz update</text>
+    <text x="300" y="427" text-anchor="middle" font-size="10" fill="#333">tracks ring-buffer fill</text>
+    <text x="300" y="443" text-anchor="middle" font-size="10" fill="#666">setpoint = ½ buffer depth</text>
+
+    <!-- depth measurement from ASRC -->
+    <path d="M300 280 V 320 H 380 V 370" fill="none" stroke="#864" stroke-dasharray="3,3"/>
+    <line x1="380" y1="365" x2="380" y2="370" stroke="#864" marker-end="url(#arrowSmall)"/>
+    <text x="386" y="320" font-size="10" fill="#864">samples_avail</text>
+
+    <!-- step output back into ASRC -->
+    <path d="M220 370 V 320 H 220 V 280" fill="none" stroke="#864" stroke-dasharray="3,3"/>
+    <line x1="220" y1="285" x2="220" y2="280" stroke="#864" marker-end="url(#arrowSmall)"/>
+  </g>
+
+  <!-- Legend -->
+  <g transform="translate(720, 365)">
+    <rect x="0" y="0" width="560" height="115" rx="6" fill="#fafafa" stroke="#bbb"/>
+    <text x="14" y="20" font-weight="600" font-size="12">Legend</text>
+
+    <rect x="14"  y="32" width="18" height="14" fill="url(#gIo)"     stroke="#444"/>
+    <text x="38"  y="44" font-size="11">I/O / interface</text>
+
+    <rect x="160" y="32" width="18" height="14" fill="url(#gFilter)" stroke="#244"/>
+    <text x="184" y="44" font-size="11">Linear DSP (filter / resampler)</text>
+
+    <rect x="14"  y="58" width="18" height="14" fill="url(#gDsm)"    stroke="#532"/>
+    <text x="38"  y="70" font-size="11">Non-linear DSP (Δ-Σ)</text>
+
+    <rect x="160" y="58" width="18" height="14" fill="url(#gAnalog)" stroke="#252"/>
+    <text x="184" y="70" font-size="11">Analog</text>
+
+    <rect x="14"  y="84" width="18" height="14" fill="url(#gCtl)"    stroke="#864"/>
+    <text x="38"  y="96" font-size="11">Control loop</text>
+
+    <line x1="160" y1="91" x2="200" y2="91" stroke="#864" stroke-dasharray="3,3"/>
+    <text x="206" y="95" font-size="11">control / aux signal</text>
+
+    <line x1="340" y1="91" x2="380" y2="91" stroke="#222" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="386" y="95" font-size="11">audio sample stream</text>
+  </g>
+
+  <!-- Bottom note -->
+</svg>

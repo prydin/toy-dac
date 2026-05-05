@@ -1,5 +1,7 @@
 # toy-dac
 
+![alt text](block_diagram.png)
+
 A 1-bit ΔΣ stereo audio DAC implemented on a Xilinx 7-series FPGA
 (Digilent Cmod S7), driven from an I²S input.
 

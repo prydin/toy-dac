@@ -55,9 +55,10 @@ module halfband_up2 #(
     // to time the two output pulses per input. Must match the actual
     // input period or output spacing will be off.
     parameter integer IN_PERIOD_MCLK = 64,
-    // mclks from in_valid edge to first out_valid pulse. Must be ≥ 2:
-    // 1 cycle for shift-register update, 1 cycle for y_*_q register.
-    parameter integer EMIT_DELAY     = 2
+    // mclks from in_valid edge to first out_valid pulse. Must be ≥ 4:
+    // 1 cycle for shift-register update, 1 cycle for pre-add register,
+    // 1 cycle for product register, 1 cycle for y_*_q register.
+    parameter integer EMIT_DELAY     = 4
 )(
     input  wire                      clk,
     input  wire                      rst,
@@ -90,20 +91,51 @@ module halfband_up2 #(
     end
 
     // ── Symmetric pre-adds (DATA_W+1 bits signed) ────────────────
-    wire signed [DATA_W:0] s0_14 = x_sr[0]  + x_sr[14];
-    wire signed [DATA_W:0] s2_12 = x_sr[2]  + x_sr[12];
-    wire signed [DATA_W:0] s4_10 = x_sr[4]  + x_sr[10];
-    wire signed [DATA_W:0] s6_8  = x_sr[6]  + x_sr[8];
+    // Registered to break the long combinational chain from the shift
+    // register through the multipliers and adder tree (was failing
+    // timing at 108 MHz with DATA_W=32: the pre-add was 33b → multiply
+    // didn't fit in a single 25×18 DSP48 and Vivado built it from
+    // CARRY4s in fabric, ~17 logic levels).
+    reg signed [DATA_W:0] s0_14_q = {(DATA_W+1){1'b0}};
+    reg signed [DATA_W:0] s2_12_q = {(DATA_W+1){1'b0}};
+    reg signed [DATA_W:0] s4_10_q = {(DATA_W+1){1'b0}};
+    reg signed [DATA_W:0] s6_8_q  = {(DATA_W+1){1'b0}};
+    always @(posedge clk) begin
+        if (rst) begin
+            s0_14_q <= {(DATA_W+1){1'b0}};
+            s2_12_q <= {(DATA_W+1){1'b0}};
+            s4_10_q <= {(DATA_W+1){1'b0}};
+            s6_8_q  <= {(DATA_W+1){1'b0}};
+        end else begin
+            s0_14_q <= x_sr[0]  + x_sr[14];
+            s2_12_q <= x_sr[2]  + x_sr[12];
+            s4_10_q <= x_sr[4]  + x_sr[10];
+            s6_8_q  <= x_sr[6]  + x_sr[8];
+        end
+    end
 
-    // ── Multiplies (Vivado will infer DSP48 macros) ──────────────
-    wire signed [DATA_W+COEFF_W:0] p0 = s0_14 * C0;
-    wire signed [DATA_W+COEFF_W:0] p2 = s2_12 * C2;
-    wire signed [DATA_W+COEFF_W:0] p4 = s4_10 * C4;
-    wire signed [DATA_W+COEFF_W:0] p6 = s6_8  * C6;
+    // ── Multiplies, registered (lights up DSP48 M output register) ─
+    reg signed [DATA_W+COEFF_W:0] p0_q = {(DATA_W+COEFF_W+1){1'b0}};
+    reg signed [DATA_W+COEFF_W:0] p2_q = {(DATA_W+COEFF_W+1){1'b0}};
+    reg signed [DATA_W+COEFF_W:0] p4_q = {(DATA_W+COEFF_W+1){1'b0}};
+    reg signed [DATA_W+COEFF_W:0] p6_q = {(DATA_W+COEFF_W+1){1'b0}};
+    always @(posedge clk) begin
+        if (rst) begin
+            p0_q <= {(DATA_W+COEFF_W+1){1'b0}};
+            p2_q <= {(DATA_W+COEFF_W+1){1'b0}};
+            p4_q <= {(DATA_W+COEFF_W+1){1'b0}};
+            p6_q <= {(DATA_W+COEFF_W+1){1'b0}};
+        end else begin
+            p0_q <= s0_14_q * C0;
+            p2_q <= s2_12_q * C2;
+            p4_q <= s4_10_q * C4;
+            p6_q <= s6_8_q  * C6;
+        end
+    end
 
     // ── Sum, round, shift, saturate ──────────────────────────────
     // Two extra guard bits over the 4 product terms (4 < 2^2).
-    wire signed [DATA_W+COEFF_W+2:0] sum_full = p0 + p2 + p4 + p6;
+    wire signed [DATA_W+COEFF_W+2:0] sum_full = p0_q + p2_q + p4_q + p6_q;
     // Round-to-nearest by adding 0.5 LSB before the right shift.
     wire signed [DATA_W+COEFF_W+2:0] sum_rnd  =
         sum_full + (1 <<< (COEFF_W-2));
@@ -120,8 +152,11 @@ module halfband_up2 #(
     // Passthrough: y[2k+1] = h[7] · x[m-7] = 1.0 · x_sr[7]
     wire signed [DATA_W-1:0] y_odd = x_sr[7];
 
-    // ── Pipeline registers ───────────────────────────────────────
-    // Eliminate the combinational path 4·DSP48 → adder tree → mux → output.
+    // ── Output register ──────────────────────────────────────────
+    // y_even latency from in_valid: x_sr (1) + s_q (1) + p_q (1) + y_even_q (1)
+    // = 4 cycles, hence default EMIT_DELAY=4. y_odd has only x_sr (1) +
+    // y_odd_q (1) of physical latency but is held in y_odd_q until the
+    // next in_valid, so sampling at EMIT_DELAY=4 is safe.
     reg signed [DATA_W-1:0] y_even_q = {DATA_W{1'b0}};
     reg signed [DATA_W-1:0] y_odd_q  = {DATA_W{1'b0}};
     always @(posedge clk) begin
