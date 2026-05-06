@@ -35,7 +35,7 @@
 module nco_tb;
 
     // ── Knobs ──────────────────────────────────────────────────────
-    localparam integer MCLK_HZ           = 54_000_000;
+    localparam integer MCLK_HZ           = 108_000_000;
     localparam integer FS_NOMINAL_HZ     = 44_100;
     // Producer is +0.5 % off nominal — well outside the servo
     // deadband, easily within the INC_ADJ clamp.
