@@ -82,7 +82,7 @@ module frac_servo #(
     // step movement instead of once per PI update. Default = 14 →
     // one pulse per 16384 LSB ≈ 6.4 Hz of consumed-rate adjustment,
     // i.e. "big enough that you'd actually want to know about it".
-    parameter integer ADJUST_QUANTUM_LOG2 = 14
+    parameter integer ADJUST_QUANTUM_LOG2 = 10
 )(
     input  wire                              clk,
     input  wire                              rst,
@@ -247,14 +247,13 @@ module frac_servo #(
         adjust <= moved_up || moved_down;   // default: light whenever we're moving
     end
 
-/*
     always @(posedge clk) begin
         if (rst || !enable) begin
             pi_smooth_q_prev <= 32'sd0;
             last_dir         <= 1'b0;
             last_dir_valid   <= 1'b0;
             hold_cnt         <= {HOLD_W{1'b0}};
-            adjust           <= 1'b0;
+        //    adjust           <= 1'b0;
         end else begin
             pi_smooth_q_prev <= pi_smooth_q;
 
@@ -271,9 +270,9 @@ module frac_servo #(
             else if (hold_cnt != {HOLD_W{1'b0}})
                 hold_cnt <= hold_cnt - 1'b1;
 
-            adjust <= (hold_cnt != {HOLD_W{1'b0}});
+          //  adjust <= (hold_cnt != {HOLD_W{1'b0}});
         end 
-    end */
+    end 
 
     // ── Compose effective step: step_nominal + pi_smooth ─────────
     // Add as 33-bit signed then truncate; step_nominal_in is unsigned

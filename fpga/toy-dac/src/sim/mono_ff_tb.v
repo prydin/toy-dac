@@ -26,14 +26,20 @@ module mono_ff_tb;
 
     // Use a small DELAY so the simulation runs fast.
     localparam integer FCLK     = 108_000_000;
-    localparam integer DELAY_NS = 0;                 // 1 µs
-    localparam integer DELAY_MS = 0;
+    localparam integer DELAY_NS = 1_000;             // 1 us pulse width
     localparam integer DELAY_US = 0;
-    localparam integer EXP_CYC  = DELAY_NS != 0 ? (FCLK * DELAY_NS) / 1_000_000_000 : 
-                                        DELAY_US != 0 ? (FCLK * DELAY_US) / 1_000_000 : 
-                                        DELAY_MS != 0 ? (FCLK * DELAY_MS) / 1_000 : 0;  // = 54
+    localparam integer DELAY_MS = 0;
+    // Match the module's own math: do it in REAL to avoid 32-bit overflow
+    // (e.g. FCLK * DELAY_MS would be ~1e11 for a 1 ms pulse @108 MHz).
+    localparam real    TOTAL_DELAY_S = (DELAY_MS / 1_000.0)
+                                     + (DELAY_US / 1_000_000.0)
+                                     + (DELAY_NS / 1_000_000_000.0);
+    localparam integer EXP_CYC      = $rtoi(TOTAL_DELAY_S * FCLK);   // = 108
 
-    localparam integer CLK_PERIOD_NS = 1_000_000_000 / FCLK;          // 18 ns nominal
+    localparam integer CLK_PERIOD_NS = 1_000_000_000 / FCLK;         // 9 ns nominal
+    // Use a REAL half-period so the clock isn't quantised to integer ns
+    // (CLK_PERIOD_NS/2 would be 4, giving an 8 ns period at 108 MHz).
+    localparam real    HALF_PERIOD_NS = 0.5e9 / FCLK;                // 4.6296 ns
 
     // Two DUTs so we can exercise both modes side by side.
     reg clk = 0;
@@ -42,11 +48,13 @@ module mono_ff_tb;
     reg d_b = 0;   // RESETTABLE = 1
     wire q_a, q_b;
 
-    always #(CLK_PERIOD_NS/2) clk = ~clk;
+    always #(HALF_PERIOD_NS) clk = ~clk;
 
     mono_ff #(
         .FCLK(FCLK),
-        .DELAY(DELAY_NS),
+        .DELAY_NS(DELAY_NS),
+        .DELAY_US(DELAY_US),
+        .DELAY_MS(DELAY_MS),
         .RESETTABLE(1'b0)
     ) dut_a (
         .clk(clk), .rst(rst), .d(d_a), .q(q_a)
@@ -54,7 +62,9 @@ module mono_ff_tb;
 
     mono_ff #(
         .FCLK(FCLK),
-        .DELAY(DELAY_NS),
+        .DELAY_NS(DELAY_NS),
+        .DELAY_US(DELAY_US),
+        .DELAY_MS(DELAY_MS),
         .RESETTABLE(1'b1)
     ) dut_b (
         .clk(clk), .rst(rst), .d(d_b), .q(q_b)

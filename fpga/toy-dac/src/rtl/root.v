@@ -195,14 +195,14 @@ assign led = {dither_en, mclk_locked, mode};
 //   debug4 = i2s_zero_word          — pulses on each accepted sample whose
 //                                     upper 24 bits are all-zero or all-
 //                                     ones (true zero or near-zero).
-assign debug1 = mclk_locked;
+//assign debug1 = mclk_locked;
 
 reg debug2_r = 1'b0;
 always @(posedge mclk) begin
     if (rst)                  debug2_r <= 1'b0;
     else if (i2s_left_accept) debug2_r <= ~debug2_r;
 end
-assign debug2 = debug2_r;
+// assign debug2 = debug2_r;
 
 // ── Frame-integrity probe ────────────────────────────────────────
 // Use the same edge pulses i2s.v consumes. We want bclk_pos_edge and
@@ -462,14 +462,17 @@ asrc #(
 wire led0_b_pulse;
 mono_ff #(
     .FCLK     (MCLK_HZ),
-    .DELAY_MS (5)
+    .DELAY_MS (50),
+    .RESETTABLE(0)
 ) blue_led_stretch (
     .clk (mclk),
     .rst (rst),
     .d   (asrc_adjust),
     .q   (led0_b_pulse)
 );
-assign led0_b = led0_b_pulse;
+assign led0_b = ~led0_b_pulse;
+assign debug1 = led0_b_pulse;
+assign debug2 = asrc_adjust;
 
 // (debug2 reassigned above for glitch hunt; the older asrc_rst probe is
 // removed.)
