@@ -28,3 +28,6 @@ spice/output.qopraw
 /scripts/__pycache__
 /xsim_dac_tb
 /xsim_work
+/kicad/dac-ng/dac-backups
+/kicad/dac-ng/dac-ng-backups
+*.zip
