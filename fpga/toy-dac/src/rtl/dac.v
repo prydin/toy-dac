@@ -148,11 +148,6 @@ wire signed [STATE_W-1:0] din_q =
     {{(STATE_W - WORDLENGTH){din_held[WORDLENGTH-1]}}, din_held};
 
 // ── TPDF dither at the comparator input ────────────────────────────────
-// (See historical notes: dither at the comparator sees the full NTF and
-// can be much larger than loop-input dither without raising audio-band
-// noise. Two independent uniform sources summed give the textbook
-// triangular PDF.)
-//
 // Magnitude rule: peak TPDF span ≈ ±½ quantizer LSB. The quantizer step
 // here is 2·V_POS = 2^WORDLENGTH, so ½-LSB peak = ±V_POS/2 = ±2^(WL-2).
 // Each uniform source therefore spans ±V_POS/4 = ±2^(WL-3) and the TPDF

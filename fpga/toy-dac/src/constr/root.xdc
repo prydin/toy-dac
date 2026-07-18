@@ -64,6 +64,7 @@ set_property -dict {PACKAGE_PIN B3 IOSTANDARD LVCMOS33} [get_ports {fifo_led[1]}
 set_property -dict {PACKAGE_PIN C1 IOSTANDARD LVCMOS33} [get_ports {fifo_led[2]}]
 set_property -dict {PACKAGE_PIN B1 IOSTANDARD LVCMOS33} [get_ports {fifo_led[3]}]
 set_property -dict {PACKAGE_PIN B2 IOSTANDARD LVCMOS33} [get_ports {fifo_led[4]}]
+#set_property -dict {PACKAGE_PIN C5 IOSTANDARD LVCMOS33} [get_ports {adjust_dbg_raw}]
 #set_property -dict {PACKAGE_PIN M15 IOSTANDARD LVCMOS33} [get_ports pio21]
 #set_property -dict { PACKAGE_PIN M14   IOSTANDARD LVCMOS33 } [get_ports { pio22 }]; #IO_L9P_T1_DQS_14 Sch=pio[22]
 #set_property -dict { PACKAGE_PIN L15   IOSTANDARD LVCMOS33 } [get_ports { pio23 }]; #IO_L4N_T0_D05_14 Sch=pio[23]

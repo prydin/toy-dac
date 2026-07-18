@@ -31,22 +31,31 @@ module mono_ff #(
     output reg q
 );
 
-parameter integer EXP_CYC =  (FCLK * DELAY_NS) / 1_000_000_000 + (FCLK * DELAY_US) / 1_000_000 + (FCLK * DELAY_MS) / 1_000;  // Total delay in clock cycles
+// Calculate the total delay in clock cycles at elaboration time as float to avoid rounding issues, then convert to integer for the counter.
+localparam real TOTAL_DELAY_S = (DELAY_MS / 1_000.0) + (DELAY_US / 1_000_000.0) + (DELAY_NS / 1_000_000_000.0);
+localparam integer EXP_CYC = $rtoi(TOTAL_DELAY_S * FCLK);
 
 reg [31:0] counter = 0;
 reg last_d = 0;
+
+always @(posedge clk) begin
+    if(rst) begin
+        last_d <= 0;
+    end else begin
+        last_d <= d;
+    end
+end
 
 always @(posedge clk or posedge rst) begin
     if (rst) begin
         counter <= 0;
         q <= 0;
-        last_d <= 0;
     end else if (d && ~last_d && (RESETTABLE || ~q)) begin
-        last_d <= d; // Update last_d to the new value
         q <= 1; // Capture input after the specified delay
         counter <= EXP_CYC;
     end else if (counter == 0) begin
         q <= 0; // Clear output after delay expires
+        counter <= counter; // Hold counter at 0 until next trigger
     end else begin
         counter <= counter - 1; // Decrement counter each clock cycle
     end 
