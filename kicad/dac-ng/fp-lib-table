@@ -3,4 +3,5 @@
 	(lib (name "Custom") (type "KiCad") (uri "C:/proj/param-eq/kicad/param-eq/footprints/Custom.pretty") (options "") (descr ""))
 	(lib (name "Custom") (type "KiCad") (uri "${KIPRJMOD}/Custom.pretty") (options "") (descr ""))
 	(lib (name "Custom") (type "KiCad") (uri "C:/proj/param-eq/kicad/param-eq/footprints/Custom.pretty") (options "") (descr ""))
+	(lib (name "Custom") (type "KiCad") (uri "${KIPRJMOD}/Custom.pretty") (options "") (descr ""))
 )

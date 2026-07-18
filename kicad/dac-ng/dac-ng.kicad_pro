@@ -60,7 +60,24 @@
           "width": 0.0
         }
       ],
-      "drc_exclusions": [],
+      "drc_exclusions": [
+        [
+          "silk_edge_clearance|148336000|107060500|b24d2f35-16e3-41c4-b059-ce4a706316c0|eb3152ad-c3be-4e4d-8743-12c7903d0f5a",
+          ""
+        ],
+        [
+          "silk_edge_clearance|148336000|83760500|b24d2f35-16e3-41c4-b059-ce4a706316c0|4e6d3d14-63ed-4233-beca-51e0bd7d08aa",
+          ""
+        ],
+        [
+          "silk_edge_clearance|148336000|92060500|b24d2f35-16e3-41c4-b059-ce4a706316c0|542464fe-e453-498e-a898-024e61bb631e",
+          ""
+        ],
+        [
+          "silk_edge_clearance|148336000|98760500|b24d2f35-16e3-41c4-b059-ce4a706316c0|c892cf89-03e5-417e-b9a6-d8900ac28d3d",
+          ""
+        ]
+      ],
       "meta": {
         "version": 2
       },
@@ -524,7 +541,7 @@
       "gencad": "",
       "idf": "",
       "netlist": "",
-      "plot": "",
+      "plot": "gerber",
       "pos_files": "",
       "specctra_dsn": "",
       "step": "",
@@ -601,12 +618,84 @@
           "label": "Datasheet",
           "name": "Datasheet",
           "show": true
+        },
+        {
+          "group_by": false,
+          "label": "Check_prices",
+          "name": "Check_prices",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Description_1",
+          "name": "Description_1",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "MF",
+          "name": "MF",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "MP",
+          "name": "MP",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "PACKAGE",
+          "name": "PACKAGE",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "PRICE",
+          "name": "PRICE",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "SnapEDA_Link",
+          "name": "SnapEDA_Link",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Vendor",
+          "name": "Vendor",
+          "show": true
+        },
+        {
+          "group_by": false,
+          "label": "Venor",
+          "name": "Venor",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "AVAILABILITY",
+          "name": "AVAILABILITY",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Description",
+          "name": "Description",
+          "show": true
+        },
+        {
+          "group_by": false,
+          "label": "#",
+          "name": "${ITEM_NUMBER}",
+          "show": false
         }
       ],
       "filter_string": "",
       "group_symbols": true,
       "include_excluded_from_bom": true,
-      "name": "Default Editing",
+      "name": "",
       "sort_asc": true,
       "sort_field": "Reference"
     },
@@ -659,13 +748,21 @@
         "uuid": "b8959107-fd4f-4873-b1a7-58431a0115ac"
       }
     ],
-    "used_designators": "U5-7,C1-8,C13-14,C17-26,#PWR1-4,#PWR11,#PWR13,R1-8,R11-14,R18-31",
+    "used_designators": "D3,C33-35,R31,U6",
     "variants": []
   },
   "sheets": [
     [
       "b8959107-fd4f-4873-b1a7-58431a0115ac",
       "dac-ng"
+    ],
+    [
+      "f2a7a9fe-4122-49ab-8d06-ac296bcf74b0",
+      "Power supplies"
+    ],
+    [
+      "586c161f-37c1-49d3-b234-0aa75a54b87a",
+      "output"
     ]
   ],
   "text_variables": {},
