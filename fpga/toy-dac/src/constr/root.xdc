@@ -108,6 +108,15 @@ set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
 set_property BITSTREAM.CONFIG.CONFIGRATE 33 [current_design]
 set_property CONFIG_MODE SPIx4 [current_design]
 
+# The delta-sigma loop in dac.v advances only once every RATE_DIV mclk cycles
+# (currently 8). Hold registers inside each DAC sample input/dither on the same
+# mod_en tick as the sigma state, so paths between those registers and the
+# sigma/output registers have the full divider period to settle.
+set dac_slow_from [get_cells -hierarchical -filter {IS_SEQUENTIAL && (NAME =~ *dac_left/sigma_reg* || NAME =~ *dac_left/din_held_reg* || NAME =~ *dac_left/dither1_held_reg* || NAME =~ *dac_left/dither2_held_reg* || NAME =~ *dac_right/sigma_reg* || NAME =~ *dac_right/din_held_reg* || NAME =~ *dac_right/dither1_held_reg* || NAME =~ *dac_right/dither2_held_reg*)}]
+set dac_slow_to   [get_cells -hierarchical -filter {IS_SEQUENTIAL && (NAME =~ *dac_left/sigma_reg* || NAME =~ *dac_left/dout_reg* || NAME =~ *dac_right/sigma_reg* || NAME =~ *dac_right/dout_reg*)}]
+set_multicycle_path -setup 8 -from $dac_slow_from -to $dac_slow_to
+set_multicycle_path -hold  7 -from $dac_slow_from -to $dac_slow_to
+
 
 # set_input_delay -clock [get_clocks -of_objects [get_pins clocks/inst/mmcm_adv_inst/CLKOUT1]] 15.000 [get_ports {pio1 pio2 pio3 pio4 pio5 pio6 pio7 pio8 pio9 pio16 pio17 pio18 pio19 pio20}]
 

@@ -50,9 +50,15 @@ module asrc_tb;
 `endif
     localparam real    SIG_HZ_L      = 1_000.0;
     localparam real    SIG_HZ_R      = 1_500.0;
-    localparam real    SIG_AMPL      = 0.5;
     localparam integer SETTLE_MS     = 30;
     localparam integer CAPTURE_OUTS  = 8192;
+
+    real sig_ampl = 1.0;
+    initial begin
+        if (!$value$plusargs("SIG_AMPL=%f", sig_ampl))
+            sig_ampl = 1.0;
+        $display("asrc_tb SIG_AMPL=%f FS", sig_ampl);
+    end
 
     // ── Clock / reset ───────────────────────────────────────────────
     reg clk = 1'b0;
@@ -85,10 +91,10 @@ module asrc_tb;
         if (rst) begin
             sample_count <= 0;
         end else if (sample_valid) begin
-            sample_l <= $rtoi(SIG_AMPL * 32'sh7FFFFFFF
+            sample_l <= $rtoi(sig_ampl * 32'sh7FFFFFFF
                               * $sin(2.0 * 3.141592653589793 * SIG_HZ_L
                                      * (sample_count / FS_IN_HZ)));
-            sample_r <= $rtoi(SIG_AMPL * 32'sh7FFFFFFF
+            sample_r <= $rtoi(sig_ampl * 32'sh7FFFFFFF
                               * $sin(2.0 * 3.141592653589793 * SIG_HZ_R
                                      * (sample_count / FS_IN_HZ)));
             sample_count <= sample_count + 1;
@@ -113,7 +119,7 @@ module asrc_tb;
         .COEFF_W      (COEFF_W),
         .PHASES       (PHASES),
         .TAPS         (TAPS),
-        .COEFF_FILE   ("frac_asrc.mem"),
+        .COEFF_FILE   ("src/rtl/frac_asrc.mem"),
         .MCLK_HZ      (MCLK_HZ),
         .OUT_DIV      (OUT_DIV),
         .SAMP_SETPOINT(TAPS),
@@ -146,6 +152,12 @@ module asrc_tb;
     integer servo_csv = 0;
     integer captured  = 0;
     integer total_outs = 0;
+    integer sat_l = 0;
+    integer sat_r = 0;
+    reg signed [WIDTH-1:0] min_l = 32'sh7FFFFFFF;
+    reg signed [WIDTH-1:0] max_l = -32'sh7FFFFFFF;
+    reg signed [WIDTH-1:0] min_r = 32'sh7FFFFFFF;
+    reg signed [WIDTH-1:0] max_r = -32'sh7FFFFFFF;
     real    settle_ns = SETTLE_MS * 1.0e6;
     reg     capturing = 1'b0;
 
@@ -166,8 +178,22 @@ module asrc_tb;
             captured   <= 0;
             total_outs <= 0;
             capturing  <= 1'b0;
+            sat_l      <= 0;
+            sat_r      <= 0;
+            min_l      <= 32'sh7FFFFFFF;
+            max_l      <= -32'sh7FFFFFFF;
+            min_r      <= 32'sh7FFFFFFF;
+            max_r      <= -32'sh7FFFFFFF;
         end else if (dac_dv_left) begin
             total_outs <= total_outs + 1;
+            if (dac_left == 32'sh7FFFFFFF || dac_left == -32'sh80000000)
+                sat_l <= sat_l + 1;
+            if (dac_right == 32'sh7FFFFFFF || dac_right == -32'sh80000000)
+                sat_r <= sat_r + 1;
+            if (dac_left < min_l) min_l <= dac_left;
+            if (dac_left > max_l) max_l <= dac_left;
+            if (dac_right < min_r) min_r <= dac_right;
+            if (dac_right > max_r) max_r <= dac_right;
             if (!capturing && $time >= settle_ns) capturing <= 1'b1;
             if (capturing) begin
                 $fwrite(audio_csv, "%0d,%0t,%0d,%0d\n",
@@ -179,6 +205,8 @@ module asrc_tb;
                     $display("DONE: total_outs=%0d captured=%0d  step_eff=%0d  samp_avail=%0d/%0d",
                              total_outs + 1, captured + 1,
                              step_eff, samp_avail_l, samp_avail_r);
+                    $display("ASRC range L=[%0d,%0d] R=[%0d,%0d] sat L/R=%0d/%0d",
+                             min_l, max_l, min_r, max_r, sat_l, sat_r);
                     $finish;
                 end
             end

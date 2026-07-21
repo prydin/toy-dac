@@ -40,6 +40,7 @@ module dac_param_tb;
     `include "dsm_coeffs.vh"
 
     localparam integer WORDLENGTH = 32;
+    localparam integer RATE_DIV   = 8;
 
     // 108 MHz mclk to match HW.
     localparam real T_CLK_NS = 9.259259;
@@ -76,6 +77,7 @@ module dac_param_tb;
         .COEFF_FRAC    (DSM_COEFF_FRAC),
         .STATE_INT_BITS(4),
         .N_G           (DSM_N_G),
+        .RATE_DIV      (RATE_DIV),
         .DSM_A         (DSM_A),
         .DSM_C         (DSM_C),
         .DSM_B1        (DSM_B[0]),
@@ -147,6 +149,27 @@ module dac_param_tb;
         end
     endtask
 
+    task run_sine_phase;
+        input [255:0] label;
+        input real amp_fs;
+        input integer n_mclk_cycles;
+        integer nn;
+        real phase;
+        real tone;
+        begin
+            $display("%0s: sine amp = %f FS", label, amp_fs);
+            reset_stats();
+            dvalid <= 1'b1;
+            for (nn = 0; nn < n_mclk_cycles; nn = nn + 1) begin
+                phase = 6.283185307179586 * 1000.0 * ($itor(nn) / 108000000.0);
+                tone = amp_fs * $sin(phase);
+                din <= $rtoi(tone * 2147483647.0);
+                @(posedge clk);
+            end
+            report_phase(label);
+        end
+    endtask
+
     // ── Bit-stream dump ─────────────────────────────────────────────
     integer bin_fd;
     reg     dump_active = 1'b0;
@@ -158,8 +181,8 @@ module dac_param_tb;
 
     // ── Test sequencer ──────────────────────────────────────────────
     initial begin
-        $display("dac_param_tb starting (ORDER=%0d, N_G=%0d)",
-                 DSM_ORDER, DSM_N_G);
+        $display("dac_param_tb starting (ORDER=%0d, N_G=%0d, RATE_DIV=%0d)",
+             DSM_ORDER, DSM_N_G, RATE_DIV);
         bin_fd = $fopen("dac_bits.bin", "wb");
 
         #200 rst = 1'b0;
@@ -192,6 +215,13 @@ module dac_param_tb;
         reset_stats();
         #500_000;
         report_phase("Phase 3 (DC=-0.5 FS)");
+
+        // Phase 4/5: high-level sine stress at the deployed divider.
+        // 0 dBFS on the external I2S path should not send the modulator
+        // numerically unstable; if this rails, the coefficient set is too
+        // aggressive even after the Hinf reduction.
+        run_sine_phase("Phase 4 (sine=-5 dBFS)", 0.562341, 2_000_000);
+        run_sine_phase("Phase 5 (sine=0 dBFS)", 1.000000, 2_000_000);
 
         $fclose(bin_fd);
         $display("dac_param_tb done — wrote dac_bits.bin");

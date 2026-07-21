@@ -205,8 +205,7 @@ module interp_dac_thd_tb;
         .dvalid        (dac_dv),
         .dither1       (32'd0),     // dither off — measure raw modulator
         .dither2       (32'd0),
-        .dout          (dout),
-        .din_held_debug()
+        .dout          (dout)
     );
 
     // ── Capture ─────────────────────────────────────────────────

@@ -65,7 +65,6 @@ random #(
 //  DAC
 // ====================================================================
 wire        dac_out;
-wire signed [31:0] din_held_debug;
 
 dac #(
     .WORDLENGTH(32),
@@ -77,8 +76,7 @@ dac #(
     .dvalid         (dds_valid),
     .dither1        (dither1),
     .dither2        (dither2),
-    .dout           (dac_out),
-    .din_held_debug (din_held_debug)
+    .dout           (dac_out)
 );
 
 // ====================================================================

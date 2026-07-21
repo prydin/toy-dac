@@ -2877,6 +2877,145 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "power:+3.3V"
+			(power global)
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 0)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "#PWR"
+				(at 0 -3.81 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "+3.3V"
+				(at 0 3.556 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Power symbol creates a global label with name \"+3.3V\""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_keywords" "global power"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "+3.3V_0_1"
+				(polyline
+					(pts
+						(xy -0.762 1.27) (xy 0 2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 0 2.54) (xy 0.762 1.27)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 0 0) (xy 0 2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "+3.3V_1_1"
+				(pin power_in line
+					(at 0 0 90)
+					(length 0)
+					(name ""
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "power:+5V"
 			(power global)
 			(pin_numbers
@@ -3260,12 +3399,6 @@
 		(uuid "2dc419bd-1185-40a8-a7bd-3e55acde3ce5")
 	)
 	(junction
-		(at 80.01 72.39)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "38b98a38-d933-4687-aee0-abff8dbf63ed")
-	)
-	(junction
 		(at 227.33 43.18)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -3300,6 +3433,12 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "6273d945-62c6-4ab2-bc1d-4a2032d477b8")
+	)
+	(junction
+		(at 59.69 45.72)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "7b1db341-a02f-43eb-81ea-5cf9157d6f03")
 	)
 	(junction
 		(at 227.33 71.12)
@@ -3342,12 +3481,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "ecbf1091-2c59-4999-ab0d-5f11722bdafd")
-	)
-	(junction
-		(at 59.69 63.5)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "f5eaeaf7-a4e8-4da6-a15d-8dafe2c53361")
 	)
 	(no_connect
 		(at 110.49 64.77)
@@ -3455,16 +3588,6 @@
 	)
 	(wire
 		(pts
-			(xy 59.69 76.2) (xy 80.01 76.2)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "0c5fc216-04c0-45cc-82b7-cc222e73dd0a")
-	)
-	(wire
-		(pts
 			(xy 110.49 31.75) (xy 130.81 31.75)
 		)
 		(stroke
@@ -3522,6 +3645,16 @@
 			(type default)
 		)
 		(uuid "1552f6ff-ba85-4f02-bc6d-b48d255d950f")
+	)
+	(wire
+		(pts
+			(xy 59.69 43.18) (xy 59.69 45.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1742c87f-1fd1-4dd6-ba57-2ac354530d60")
 	)
 	(wire
 		(pts
@@ -3645,16 +3778,6 @@
 	)
 	(wire
 		(pts
-			(xy 76.2 72.39) (xy 80.01 72.39)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "38c9475a-8d9c-41e2-a97f-e1932512274a")
-	)
-	(wire
-		(pts
 			(xy 48.26 26.67) (xy 64.77 26.67)
 		)
 		(stroke
@@ -3732,16 +3855,6 @@
 			(type default)
 		)
 		(uuid "54e92cdd-2b59-4a16-97ea-98331149b4e3")
-	)
-	(wire
-		(pts
-			(xy 80.01 76.2) (xy 80.01 72.39)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "56cb69b3-3f95-4072-8f17-3d5095c3d4a5")
 	)
 	(wire
 		(pts
@@ -3955,16 +4068,6 @@
 	)
 	(wire
 		(pts
-			(xy 59.69 63.5) (xy 59.69 76.2)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "a563ac83-c5fc-4da5-b997-1f3e8caf1208")
-	)
-	(wire
-		(pts
 			(xy 154.94 50.8) (xy 160.02 50.8)
 		)
 		(stroke
@@ -4135,7 +4238,7 @@
 	)
 	(wire
 		(pts
-			(xy 80.01 72.39) (xy 83.82 72.39)
+			(xy 76.2 72.39) (xy 83.82 72.39)
 		)
 		(stroke
 			(width 0)
@@ -5265,6 +5368,84 @@
 			(project "dac-ng"
 				(path "/b8959107-fd4f-4873-b1a7-58431a0115ac"
 					(reference "R2")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:+3.3V")
+		(at 59.69 43.18 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "390d5709-7788-4fc8-ab7f-72715da42cd3")
+		(property "Reference" "#PWR027"
+			(at 59.69 46.99 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "+3.3V"
+			(at 59.69 38.1 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 59.69 43.18 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 59.69 43.18 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"+3.3V\""
+			(at 59.69 43.18 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "95aa74a5-ba2b-4f4a-b985-084524a2270c")
+		)
+		(instances
+			(project "dac-ng"
+				(path "/b8959107-fd4f-4873-b1a7-58431a0115ac"
+					(reference "#PWR027")
 					(unit 1)
 				)
 			)

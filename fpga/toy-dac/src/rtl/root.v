@@ -15,7 +15,7 @@ module top(
     input wire din,        // I2S serial data in
     input wire bypass,     // A/B test: HIGH = bypass ASRC, clock samples directly from I2S
     input wire [1:0] btn,     // Push buttons
-    output wire [3:0] led,    // LEDs for mode and dither indication
+    output wire [3:0] led,    // LEDs for mode, clock/status, and dither indication
     output wire [4:0] fifo_led, // 5-step thermometer of ASRC ring-buffer fill (pio16-20)
     output wire led0_b        // RGB LED blue channel — blinks on each ASRC adjust
 );
@@ -23,11 +23,28 @@ module top(
 
 parameter I2S_WORDLENGTH = 32;
 parameter MODULATOR_WORDLENGTH = 32;
-parameter MODULATOR_ORDER = 2;  // 1/2/3 supported by dac.v.
-                                // Sim shows ORDER=3 with Pascal coeffs (NTF=(1-z^-1)^3,
-                                // OBG=8) is unstable for ANY input — integrators saturate
-                                // and the output is broadband noise. ORDER=2 (OBG=4) is
-                                // stable and gives ~70 dB SNR in audio band at 108 MHz/64.
+`include "dsm_coeffs.vh"
+parameter MODULATOR_ORDER = DSM_ORDER;
+
+// Modulator update-rate divider. The 1-bit loop and the output pin
+// advance once every MODULATOR_RATE_DIV mclks. =8 lowers the 108 MHz
+// fabric clock to a 13.5 MHz modulation rate (OSR 337.5), which bench
+// testing showed cuts THD by about 6 dB on the dac-ng 74LVC2G34
+// reference-switching hardware. The IOB output flops still clock on
+// mclk, preserving matched +/- skew.
+parameter integer MODULATOR_RATE_DIV = 8;
+// Clamp clocked digital silence to exact zero before the ASRC/bypass mux.
+// The QA403 can leave low-level / stale LSB patterns while DATA appears
+// silent; those patterns produced a 3 kHz family at 48 kHz. Treat very
+// small received samples as silence and remove the lower-bit residue.
+// Threshold is 2^(32-20): about -120 dBFS, far below real program
+// material but comfortably above stale-LSB residue.
+parameter integer I2S_SILENCE_CLAMP = 1;
+parameter integer I2S_SILENCE_BITS  = 20;
+// Mute/reset the I2S audio path if LRCLK disappears. Without this,
+// rate_manager can remain in its last locked state forever because
+// rate_detect only produces updates on LRCLK edges.
+parameter integer I2S_CLOCK_TIMEOUT_MS = 50;
 
 // ── Master clock & rate-manager defaults ──────────────────────
 // MCLK_HZ is the single source of truth. The audio sample rate is
@@ -124,6 +141,7 @@ IBUF clk_ibuf_inst (.I(clk), .O(clk_ibuf));
 
 // ── Button debounce and mode cycling ──
 wire btn0_db;
+wire btn1_db;
 debounce btn0_debounce (
     .clk(mclk),
     .rst(rst),
@@ -131,26 +149,6 @@ debounce btn0_debounce (
     .btn_out(btn0_db)
 );
 
-reg btn0_prev = 0;
-reg [1:0] mode = MODE_I2S;
-always @(posedge mclk) begin
-    if (rst) begin
-        btn0_prev <= 0;
-        mode      <= MODE_I2S;
-    end else begin
-        btn0_prev <= btn0_db;
-        // Rising edge of debounced button
-        if (btn0_db && !btn0_prev) begin
-            if (mode == NUM_MODES - 1)
-                mode <= 0;
-            else
-                mode <= mode + 1;
-        end
-    end
-end
-
-// ── btn[1]: toggle dither on/off ──
-wire btn1_db;
 debounce btn1_debounce (
     .clk(mclk),
     .rst(rst),
@@ -158,30 +156,37 @@ debounce btn1_debounce (
     .btn_out(btn1_db)
 );
 
+reg btn0_prev = 0;
 reg btn1_prev = 0;
-reg dither_en = 1;
+reg [1:0] mode = MODE_I2S;
+reg dither_en = 1'b1;
 always @(posedge mclk) begin
     if (rst) begin
+        btn0_prev <= 0;
         btn1_prev <= 0;
-        dither_en <= 1;
+        mode      <= MODE_I2S;
+        dither_en <= 1'b1;
     end else begin
+        btn0_prev <= btn0_db;
         btn1_prev <= btn1_db;
+        // Rising edge of debounced button
+        if (btn0_db && !btn0_prev) begin
+            if (mode == NUM_MODES - 1)
+                mode <= 0;
+            else
+                mode <= mode + 1;
+        end
         if (btn1_db && !btn1_prev)
             dither_en <= ~dither_en;
     end
 end
 
-// LEDs: [1:0] = mode, [2] = mclk_locked, [3] = dither_en
-//   (audio-rate-lock indication is still available on fifo_led, which
-//    switches to a rate-code display once the rate detector locks.)
+// LEDs: [1:0] = mode, [2] = mclk_locked, [3] = dither enabled.
 assign led = {dither_en, mclk_locked, mode};
 
-// Debug pins — GLITCH HUNT v2 (April 28, frame-integrity probes).
-//   debug1 = mclk_locked            — should never drop.
-//   debug2 = i2s_sample_toggle      — toggles on each accepted I2S left
-//                                     sample. ~22 kHz square wave when
-//                                     audio is flowing; freezing = source
-//                                     stopped.
+// Debug pins.
+//   debug1 = stretched ASRC servo-adjust pulse.
+//   debug2 = raw ASRC servo-adjust pulse.
 //   debug3 = frame_size_anomaly     — stretched 5 ms HIGH whenever the
 //                                     bclk-edge count between two
 //                                     successive lrclk rising edges is
@@ -195,15 +200,6 @@ assign led = {dither_en, mclk_locked, mode};
 //   debug4 = i2s_zero_word          — pulses on each accepted sample whose
 //                                     upper 24 bits are all-zero or all-
 //                                     ones (true zero or near-zero).
-//assign debug1 = mclk_locked;
-
-reg debug2_r = 1'b0;
-always @(posedge mclk) begin
-    if (rst)                  debug2_r <= 1'b0;
-    else if (i2s_left_accept) debug2_r <= ~debug2_r;
-end
-// assign debug2 = debug2_r;
-
 // ── Frame-integrity probe ────────────────────────────────────────
 // Use the same edge pulses i2s.v consumes. We want bclk_pos_edge and
 // lrclk_pos_edge as 1-cycle mclk-synchronous pulses; flop_sync inside
@@ -260,9 +256,6 @@ assign debug3 = (anom_stretch != 20'd0);
 assign debug4 = i2s_left_accept &&
                 (i2s_left[I2S_WORDLENGTH-1 -: 24] == 24'd0 ||
                  i2s_left[I2S_WORDLENGTH-1 -: 24] == 24'hFFFFFF);
-
-wire signed [MODULATOR_WORDLENGTH-1:0] dac_held_left;
-wire signed [MODULATOR_WORDLENGTH-1:0] dac_held_right;
 
 // ── Sink-domain clock (phase-shifted by soft_pll) ────────────────
 // 54 MHz mclk with dynamic phase shift enabled. psclk is tied to mclk
@@ -379,12 +372,28 @@ always @(posedge mclk) bypass_sync <= {bypass_sync[0], bypass};
 wire bypass_s = bypass_sync[1];
 wire bypass_active = i2s_mode & bypass_s;
 
-wire        asrc_rst_in   = rst | (i2s_mode & rm_asrc_rst);
+localparam integer I2S_CLOCK_TIMEOUT_CYCLES = (MCLK_HZ / 1000) * I2S_CLOCK_TIMEOUT_MS;
+localparam integer I2S_CLOCK_TIMEOUT_W      = $clog2(I2S_CLOCK_TIMEOUT_CYCLES + 1);
+reg [I2S_CLOCK_TIMEOUT_W-1:0] i2s_clock_timeout_cnt = I2S_CLOCK_TIMEOUT_CYCLES;
+
+always @(posedge mclk) begin
+    if (rst) begin
+        i2s_clock_timeout_cnt <= I2S_CLOCK_TIMEOUT_CYCLES;
+    end else if (lrclk_pos_edge_w) begin
+        i2s_clock_timeout_cnt <= {I2S_CLOCK_TIMEOUT_W{1'b0}};
+    end else if (i2s_clock_timeout_cnt < I2S_CLOCK_TIMEOUT_CYCLES) begin
+        i2s_clock_timeout_cnt <= i2s_clock_timeout_cnt + 1'b1;
+    end
+end
+
+wire i2s_clock_alive = (i2s_clock_timeout_cnt < I2S_CLOCK_TIMEOUT_CYCLES);
+
+wire        asrc_rst_in   = rst | (i2s_mode & (rm_asrc_rst | ~i2s_clock_alive));
 wire [31:0] asrc_step_nom = i2s_mode ? rm_step_nominal : STEP_NOMINAL_44_1;
 // Bypass mode forces audio through immediately, so we override the
 // rate-manager's mute (which would otherwise hold us silent for the
 // 250 ms settle window every time rate_manager re-locks).
-wire        audio_mute    = (i2s_mode & ~bypass_s) ? rm_mute : 1'b0;
+wire        audio_mute    = i2s_mode ? ((~bypass_s & rm_mute) | ~i2s_clock_alive) : 1'b0;
 
 // ── Digital ASRC (fractional-phase, Phase 4 rewrite) ────────────
 // The new `asrc` owns its own input ring buffers, polyphase filter
@@ -411,6 +420,17 @@ wire [FIFO_CW-1:0] fifo_rd_count_l =
     (asrc_samp_avail_l > FIFO_DEPTH[15:0]) ? FIFO_DEPTH[FIFO_CW-1:0]
                                            : asrc_samp_avail_l[FIFO_CW-1:0];
 
+localparam signed [I2S_WORDLENGTH-1:0] I2S_SILENCE_POS =
+    32'sd1 <<< (I2S_WORDLENGTH - I2S_SILENCE_BITS);
+localparam signed [I2S_WORDLENGTH-1:0] I2S_SILENCE_NEG = -I2S_SILENCE_POS;
+wire i2s_left_silent  = (i2s_left  < I2S_SILENCE_POS) && (i2s_left  > I2S_SILENCE_NEG);
+wire i2s_right_silent = (i2s_right < I2S_SILENCE_POS) && (i2s_right > I2S_SILENCE_NEG);
+
+wire signed [I2S_WORDLENGTH-1:0] i2s_left_for_asrc  =
+    ((I2S_SILENCE_CLAMP != 0) && i2s_left_silent)  ? {I2S_WORDLENGTH{1'b0}} : i2s_left;
+wire signed [I2S_WORDLENGTH-1:0] i2s_right_for_asrc =
+    ((I2S_SILENCE_CLAMP != 0) && i2s_right_silent) ? {I2S_WORDLENGTH{1'b0}} : i2s_right;
+
 // Run the servo whenever we're in I2S mode.
 wire asrc_enable = (mode == MODE_I2S);
 
@@ -428,6 +448,7 @@ asrc #(
                                                    // of slack on either side for crystal drift before
                                                    // hitting a rail.
     .SERVO_UPDATE_HZ(100),                         // pure-P loop, slew-limited; see frac_servo.v header
+    .SERVO_ENABLE   (1),
     .STEP_NOMINAL   (STEP_NOMINAL_44_1)
 ) asrc_inst (
     .clk                 (mclk),
@@ -435,8 +456,8 @@ asrc #(
     .enable              (asrc_enable),
     .step_nominal_in     (asrc_step_nom),
 
-    .i2s_left            (i2s_left),
-    .i2s_right           (i2s_right),
+    .i2s_left            (i2s_left_for_asrc),
+    .i2s_right           (i2s_right_for_asrc),
     .left_valid          (i2s_left_accept),
     .right_valid         (i2s_right_accept),
 
@@ -474,11 +495,6 @@ assign led0_b = ~led0_b_pulse;
 assign debug1 = led0_b_pulse;
 assign debug2 = asrc_adjust;
 
-// (debug2 reassigned above for glitch hunt; the older asrc_rst probe is
-// removed.)
-
-
-
 // ── Internal DDS test tone (1 kHz sine) ──
 // DDS output is 26-bit Two's Complement in a 32-bit tdata field.
 // Xilinx zero-pads [31:26].  Left-shift by 6 so the 26-bit sine
@@ -500,7 +516,6 @@ wire signed [31:0] dds_data = {{1{dds_raw[25]}}, dds_raw[25:0], 5'b0};
 // SAMPLE_DIV is derived from MCLK_HZ/FS_HZ at the top of this module.
 reg [$clog2(SAMPLE_DIV)-1:0] sample_cnt = 0;
 reg        test_valid = 0;
-reg signed [31:0] test_held = 0;
 
 wire test_accepted = test_valid & output_ready_left;
 
@@ -508,14 +523,12 @@ always @(posedge mclk) begin
     if (rst) begin
         sample_cnt <= 0;
         test_valid <= 0;
-        test_held  <= 0;
     end else begin
         if (test_accepted)
             test_valid <= 0;
         if (sample_cnt == SAMPLE_DIV - 1) begin
             sample_cnt <= 0;
             test_valid <= 1;
-            test_held  <= dds_data;
         end else begin
             sample_cnt <= sample_cnt + 1;
         end
@@ -534,10 +547,10 @@ reg src_valid_right;
 always @(*) begin
     case (mode)
         MODE_DDS: begin
-            src_left       = test_held;
-            src_right      = test_held;
-            src_valid_left  = test_valid;
-            src_valid_right = test_valid;
+            src_left       = dds_data;
+            src_right      = dds_data;
+            src_valid_left  = dds_valid;
+            src_valid_right = dds_valid;
         end
         MODE_DC: begin
             src_left       = DC_LEVEL;
@@ -645,7 +658,6 @@ random #(
     .dout(dither2_raw)
 );
 
-// Gate dither with toggle
 wire [31:0] dither1 = dither_en ? dither1_raw : 32'd0;
 wire [31:0] dither2 = dither_en ? dither2_raw : 32'd0;
 
@@ -664,11 +676,11 @@ wire dac_raw_r;
 //                        instead).
 wire i2s_path = (mode == MODE_I2S);
 wire signed [I2S_WORDLENGTH-1:0] dac_din_left  =
-        (i2s_path && bypass_active) ? i2s_left            :
+    (i2s_path && bypass_active) ? i2s_left_for_asrc   :
         (i2s_path)                  ? dac_in_left_paced   :
                                       src_left;
 wire signed [I2S_WORDLENGTH-1:0] dac_din_right =
-        (i2s_path && bypass_active) ? i2s_right           :
+    (i2s_path && bypass_active) ? i2s_right_for_asrc  :
         (i2s_path)                  ? dac_in_right_paced  :
                                       src_right;
 wire dac_dvalid_l =
@@ -682,7 +694,15 @@ wire dac_dvalid_r =
 
 dac #(
     .WORDLENGTH(MODULATOR_WORDLENGTH),
-    .ORDER(MODULATOR_ORDER)
+    .ORDER(MODULATOR_ORDER),
+    .COEFF_W(DSM_COEFF_W),
+    .COEFF_FRAC(DSM_COEFF_FRAC),
+    .N_G(DSM_N_G),
+    .RATE_DIV(MODULATOR_RATE_DIV),
+    .DSM_A(DSM_A),
+    .DSM_C(DSM_C),
+    .DSM_B1(DSM_B[0]),
+    .DSM_G(DSM_G)
 ) dac_left (
     .clk(mclk),
     .rst(rst),
@@ -691,13 +711,20 @@ dac #(
     .dither1(dither1),
     .dither2(dither2),
     .dout(dac_raw_l)
-//    .din_held_debug(dac_held_left)
 );
 
 
 dac #(
     .WORDLENGTH(MODULATOR_WORDLENGTH),
-    .ORDER(MODULATOR_ORDER)
+    .ORDER(MODULATOR_ORDER),
+    .COEFF_W(DSM_COEFF_W),
+    .COEFF_FRAC(DSM_COEFF_FRAC),
+    .N_G(DSM_N_G),
+    .RATE_DIV(MODULATOR_RATE_DIV),
+    .DSM_A(DSM_A),
+    .DSM_C(DSM_C),
+    .DSM_B1(DSM_B[0]),
+    .DSM_G(DSM_G)
 ) dac_right (
     .clk(mclk),
     .rst(rst),
@@ -706,7 +733,6 @@ dac #(
     .dither1(dither1),
     .dither2(dither2),
     .dout(dac_raw_r)
-//    .din_held_debug(dac_held_right)
 );
 
 // Output registers for DAC — these get packed into IOB flip-flops

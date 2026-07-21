@@ -220,28 +220,38 @@ module fractional_asrc #(
     reg s3_v = 1'b0, s3_first = 1'b0, s3_last = 1'b0; reg [15:0] s3_alpha = 16'd0;
     reg s4_v = 1'b0, s4_first = 1'b0, s4_last = 1'b0;
     reg s5_v = 1'b0, s5_first = 1'b0, s5_last = 1'b0;
-    reg               s6_last  = 1'b0;
+    reg s6_v = 1'b0, s6_first = 1'b0, s6_last = 1'b0;
+    reg s7_v = 1'b0, s7_first = 1'b0, s7_last = 1'b0;
+    reg               s8_last  = 1'b0;
 
-    reg signed [DATA_W-1:0]  samp_d1     = {DATA_W{1'b0}};
-    reg signed [COEFF_W-1:0] coeff_blend = {COEFF_W{1'b0}};
+    (* keep = "true" *) reg signed [DATA_W-1:0]  samp_d1     = {DATA_W{1'b0}};
+    (* keep = "true" *) reg signed [DATA_W-1:0]  samp_d2     = {DATA_W{1'b0}};
+    (* keep = "true" *) reg signed [DATA_W-1:0]  samp_d3     = {DATA_W{1'b0}};
+    (* keep = "true" *) reg signed [COEFF_W:0]   coeff_a_d1  = {(COEFF_W+1){1'b0}};
+    (* keep = "true" *) reg signed [COEFF_W:0]   coeff_a_d2  = {(COEFF_W+1){1'b0}};
+    (* keep = "true" *) reg signed [COEFF_W:0]   coeff_diff_q = {(COEFF_W+1){1'b0}};
+    (* keep = "true" *) reg signed [16:0]        alpha_q     = 17'd0;
+    (* keep = "true" *) reg signed [COEFF_W+16:0] lerp_rnd_q = {(COEFF_W+17){1'b0}};
+    (* keep = "true" *) reg signed [COEFF_W-1:0] coeff_blend = {COEFF_W{1'b0}};
     reg signed [PROD_W-1:0]  prod        = {PROD_W{1'b0}};
     reg signed [ACC_W-1:0]   acc         = {ACC_W{1'b0}};
 
-    // Combinational lerp at S3 (uses pipelined alpha s3_alpha).
+    // Pipelined coefficient lerp. Alpha is unsigned Q0.16; widen to
+    // 17 bits with a leading sign zero so the multiply is signed-by-signed.
+    // Round-half-up on the 16-bit shift kills truncation-bias harmonics.
+    // The BRAM coefficient read, lerp multiply, blend add, sample multiply,
+    // and accumulator are deliberately separate 108 MHz stages.
+    //
     // Alpha is unsigned Q0.16; widen to 17 bits with a leading sign
     // zero so the multiply is signed-by-signed. Round-half-up on the
     // 16-bit shift kills the truncation-bias harmonics.
     wire signed [COEFF_W:0] coeff_diff =
         $signed({coeff_b_q[COEFF_W-1], coeff_b_q})
       - $signed({coeff_a_q[COEFF_W-1], coeff_a_q});
-    wire signed [COEFF_W + 16 : 0] lerp_term =
-        coeff_diff * $signed({1'b0, s3_alpha});
-    // Round-half-up: add 2^15 before the >>>16. Use an 18-bit signed
-    // positive literal so the sign-extension to (COEFF_W+17) bits is
-    // a simple zero-extend.
-    wire signed [COEFF_W + 16 : 0] lerp_rnd  = lerp_term + 18'sh08000;
-    wire signed [COEFF_W : 0]      blended   =
-        $signed({coeff_a_q[COEFF_W-1], coeff_a_q}) + (lerp_rnd >>> 16);
+    wire signed [COEFF_W + 16 : 0] lerp_rnd_next =
+        (coeff_diff_q * alpha_q) + 18'sh08000;
+    wire signed [COEFF_W : 0] blended_next =
+        coeff_a_d2 + (lerp_rnd_q >>> 16);
 
     // ----------------------------------------------------------------
     // Sequencer
@@ -264,8 +274,17 @@ module fractional_asrc #(
             s3_v <= 1'b0; s3_first <= 1'b0; s3_last <= 1'b0; s3_alpha <= 16'd0;
             s4_v <= 1'b0; s4_first <= 1'b0; s4_last <= 1'b0;
             s5_v <= 1'b0; s5_first <= 1'b0; s5_last <= 1'b0;
-            s6_last      <= 1'b0;
+            s6_v <= 1'b0; s6_first <= 1'b0; s6_last <= 1'b0;
+            s7_v <= 1'b0; s7_first <= 1'b0; s7_last <= 1'b0;
+            s8_last      <= 1'b0;
             samp_d1      <= {DATA_W{1'b0}};
+            samp_d2      <= {DATA_W{1'b0}};
+            samp_d3      <= {DATA_W{1'b0}};
+            coeff_a_d1   <= {(COEFF_W+1){1'b0}};
+            coeff_a_d2   <= {(COEFF_W+1){1'b0}};
+            coeff_diff_q <= {(COEFF_W+1){1'b0}};
+            alpha_q      <= 17'd0;
+            lerp_rnd_q   <= {(COEFF_W+17){1'b0}};
             coeff_blend  <= {COEFF_W{1'b0}};
             prod         <= {PROD_W{1'b0}};
             acc          <= {ACC_W{1'b0}};
@@ -292,7 +311,9 @@ module fractional_asrc #(
             s3_v     <= s2_v;     s3_first <= s2_first; s3_last <= s2_last; s3_alpha <= s2_alpha;
             s4_v     <= s3_v;     s4_first <= s3_first; s4_last <= s3_last;
             s5_v     <= s4_v;     s5_first <= s4_first; s5_last <= s4_last;
-            s6_last  <= s5_last;
+            s6_v     <= s5_v;     s6_first <= s5_first; s6_last <= s5_last;
+            s7_v     <= s6_v;     s7_first <= s6_first; s7_last <= s6_last;
+            s8_last  <= s7_last;
 
             // ---- S1: launch / address-drive ----
             if (enable && out_strobe && !s0_active && launch_ok) begin
@@ -337,27 +358,42 @@ module fractional_asrc #(
                 s2_alpha <= s0_alpha;   // hold
             end
 
-            // ---- S3: latch sample + lerp (BRAM/samp data valid) ----
+            // ---- S3: latch BRAM outputs and interpolation inputs ----
             if (s3_v) begin
-                samp_d1     <= samp_q; 
-                coeff_blend <= blended[COEFF_W-1:0];
+                samp_d1      <= samp_q;
+                coeff_a_d1   <= $signed({coeff_a_q[COEFF_W-1], coeff_a_q});
+                coeff_diff_q <= coeff_diff;
+                alpha_q      <= $signed({1'b0, s3_alpha});
             end
 
-            // ---- S4: multiply ----
+            // ---- S4: coefficient-lerp multiply ----
             if (s4_v) begin
-                prod <= coeff_blend * samp_d1;
+                samp_d2    <= samp_d1;
+                coeff_a_d2 <= coeff_a_d1;
+                lerp_rnd_q <= lerp_rnd_next;
             end
 
-            // ---- S5: accumulate (init on first tap, add otherwise) ----
+            // ---- S5: coefficient blend ----
             if (s5_v) begin
-                if (s5_first)
+                samp_d3     <= samp_d2;
+                coeff_blend <= blended_next[COEFF_W-1:0];
+            end
+
+            // ---- S6: sample multiply ----
+            if (s6_v) begin
+                prod <= coeff_blend * samp_d3;
+            end
+
+            // ---- S7: accumulate (init on first tap, add otherwise) ----
+            if (s7_v) begin
+                if (s7_first)
                     acc <= {{(ACC_W - PROD_W){prod[PROD_W-1]}}, prod};
                 else
                     acc <= acc + {{(ACC_W - PROD_W){prod[PROD_W-1]}}, prod};
             end
 
-            // ---- S6: emit output one cycle after final accumulate ----
-            if (s6_last) begin
+            // ---- S8: emit output one cycle after final accumulate ----
+            if (s8_last) begin
                 data_out   <= sat_round(acc, OUT_SHIFT);
                 dvalid_out <= 1'b1;
             end

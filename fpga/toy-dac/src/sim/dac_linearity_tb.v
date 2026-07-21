@@ -50,7 +50,6 @@ module dac_linearity_tb;
     reg signed [WORDLENGTH-1:0] din    = 0;
     reg                         dvalid = 1'b1;       // always update
     wire                        dout;
-    wire signed [WORDLENGTH-1:0] din_held_debug;
 
     dac #(
         .WORDLENGTH(WORDLENGTH),
@@ -62,8 +61,7 @@ module dac_linearity_tb;
         .dvalid        (dvalid),
         .dither1       (32'd0),       // dither off
         .dither2       (32'd0),
-        .dout          (dout),
-        .din_held_debug(din_held_debug)
+        .dout          (dout)
     );
 
     // ── Measurement helpers ─────────────────────────────────────

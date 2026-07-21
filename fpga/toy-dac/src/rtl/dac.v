@@ -63,6 +63,14 @@ module dac #(
     parameter integer STATE_INT_BITS = 4,
     // Number of resonator-feedback pairs. 0 for Pascal/no-resonator.
     parameter integer N_G            = 0,
+    // Modulator update-rate divider. The loop advances (integrator state
+    // and output bit) once every RATE_DIV clk cycles; RATE_DIV=1 (the
+    // default) runs at the full clk rate. Use >1 to lower the effective
+    // modulation frequency — and hence the OSR — by that factor without a
+    // separate clock domain. E.g. RATE_DIV=4 turns a 108 MHz clk into a
+    // 27 MHz modulation/output-toggle rate so slower downstream
+    // reference-switching buffers (74LVC2G34) can settle fully each bit.
+    parameter integer RATE_DIV       = 1,
     // Coefficient arrays (signed Q-format above). Default all-zero;
     // module synthesises Pascal weights internally when ORDER∈{1,2}
     // and DSM_A[0]==0.
@@ -135,11 +143,17 @@ localparam signed [STATE_W-1:0] V_NEG = -V_POS;
 // ── State ──────────────────────────────────────────────────────────────
 reg  signed [STATE_W-1:0] sigma [0:ORDER-1];
 reg  signed [WORDLENGTH-1:0] din_held;
+reg  signed [WORDLENGTH-1:0] din_pending;
+reg  [31:0] dither1_held;
+reg  [31:0] dither2_held;
 
 integer iv;
 initial begin
     for (iv = 0; iv < ORDER; iv = iv + 1) sigma[iv] = '0;
     din_held = '0;
+    din_pending = '0;
+    dither1_held = 32'd0;
+    dither2_held = 32'd0;
 end
 
 // din placed in state Q-format (sign-extend; fractional bits already align
@@ -162,8 +176,8 @@ wire signed [STATE_W-1:0] din_q =
 //
 // We take the high WORDLENGTH-2 bits of each 32-bit LFSR word and
 // sign-extend to get sources of magnitude ±2^(WL-3).
-wire signed [WORDLENGTH-1:0] dither_a = $signed({{2{dither1[WORDLENGTH-1]}}, dither1[WORDLENGTH-1:2]});
-wire signed [WORDLENGTH-1:0] dither_b = $signed({{2{dither2[WORDLENGTH-1]}}, dither2[WORDLENGTH-1:2]});
+wire signed [WORDLENGTH-1:0] dither_a = $signed({{2{dither1_held[WORDLENGTH-1]}}, dither1_held[WORDLENGTH-1:2]});
+wire signed [WORDLENGTH-1:0] dither_b = $signed({{2{dither2_held[WORDLENGTH-1]}}, dither2_held[WORDLENGTH-1:2]});
 wire signed [WORDLENGTH:0]   dither_tpdf = dither_a + dither_b;
 wire signed [STATE_W-1:0]    dither_q =
     {{(STATE_W - WORDLENGTH - 1){dither_tpdf[WORDLENGTH]}}, dither_tpdf};
@@ -218,18 +232,50 @@ always @(*) begin
     end
 end
 
+// ── Modulator update-rate enable ───────────────────────────────────────
+// RATE_DIV=1 → mod_en asserts every cycle (full-rate, back-compatible).
+// RATE_DIV>1 → mod_en asserts 1 cycle in RATE_DIV, lowering the effective
+// modulation/output rate (and thus the OSR) by that factor. The state and
+// output bit only advance on mod_en; din_held still tracks dvalid so the
+// input sample stays current between modulator ticks.
+wire mod_en;
+generate
+    if (RATE_DIV <= 1) begin : g_full_rate
+        assign mod_en = 1'b1;
+    end else begin : g_div_rate
+        localparam integer RC_W = $clog2(RATE_DIV);
+        reg [RC_W-1:0] rate_cnt = '0;
+        localparam [RC_W-1:0] RATE_TERMINAL = RATE_DIV[RC_W-1:0] - 1'b1;
+        always @(posedge clk or posedge rst) begin
+            if (rst)
+                rate_cnt <= '0;
+            else
+                rate_cnt <= (rate_cnt == RATE_TERMINAL) ? '0 : rate_cnt + 1'b1;
+        end
+        assign mod_en = (rate_cnt == '0);
+    end
+endgenerate
+
 // ── State register & output ────────────────────────────────────────────
 always @(posedge clk or posedge rst) begin
     if (rst) begin
         for (iv = 0; iv < ORDER; iv = iv + 1) sigma[iv] <= '0;
-        din_held <= '0;
-        dout     <= 1'b0;
+        din_held     <= '0;
+        din_pending  <= '0;
+        dither1_held <= 32'd0;
+        dither2_held <= 32'd0;
+        dout         <= 1'b0;
     end else begin
         if (dvalid)
-            din_held <= din;
-        for (iv = 0; iv < ORDER; iv = iv + 1)
-            sigma[iv] <= sigma_next[iv];
-        dout <= q_bit;
+            din_pending <= din;
+        if (mod_en) begin
+            din_held     <= dvalid ? din : din_pending;
+            dither1_held <= dither1;
+            dither2_held <= dither2;
+            for (iv = 0; iv < ORDER; iv = iv + 1)
+                sigma[iv] <= sigma_next[iv];
+            dout <= q_bit;
+        end
     end
 end
 

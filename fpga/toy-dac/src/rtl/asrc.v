@@ -63,6 +63,11 @@ module asrc #(
     // PI servo update rate. 100 Hz is fine in real hardware; bumping
     // to 1000+ Hz makes simulation testbenches converge in ms.
     parameter integer SERVO_UPDATE_HZ = 100,
+    // Diagnostic: when 0, the ASRC engines still run but the servo
+    // correction is frozen at zero, so step_eff == step_nominal_in.
+    // This separates ratio-servo phase modulation from the rest of
+    // the I2S/ASRC datapath.
+    parameter integer SERVO_ENABLE = 1,
     // Default 44.1 kHz step constant (Q0.32) for Fs_out = 1.6875 MHz.
     // round(44100 / 1687500 * 2^32) = 112_261_131.
     parameter [31:0]  STEP_NOMINAL  = 32'd112_261_131
@@ -139,7 +144,7 @@ module asrc #(
     ) servo_inst (
         .clk             (clk),
         .rst             (rst),
-        .enable          (enable),
+        .enable          (enable && (SERVO_ENABLE != 0)),
         .step_nominal_in (step_nom_eff),
         .fifo_count      (samp_avail_clamped),
         .step            (step_eff),
