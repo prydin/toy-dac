@@ -7,14 +7,14 @@
 // `clock` module so the rest of the design (root.v) does not have to
 // change.
 //
-//   12 MHz crystal in  → 108 MHz mclk out
+//   12 MHz crystal in  → 54 MHz mclk out
 //
 // Math (Spartan-7 -1, MMCME2_ADV):
 //     VCO = f_in * (M / D)         must be in 600 – 1200 MHz
 //     f_out = VCO / O
-//   With M = 63, D = 1, O = 7:
+//   With M = 63, D = 1, O = 14:
 //     VCO   = 12 MHz × 63 / 1   = 756 MHz   ✓ in range
-//     f_out = 756 MHz   / 7     = 108 MHz   ✓
+//     f_out = 756 MHz   / 14    = 54 MHz    ✓
 //
 // CLKIN1 is expected to be already buffered (top-level instantiates an
 // IBUF on the package pin and feeds clk_ibuf here). The feedback path
@@ -29,7 +29,7 @@ module clock (
     input  wire clk_in1,    // buffered reference clock (12 MHz)
     input  wire reset,      // active-high MMCM reset
     output wire locked,     // MMCM lock indicator
-    output wire mclk,       // 108 MHz output clock (on a BUFG)
+    output wire mclk,       // 54 MHz output clock (on a BUFG)
 
     // Dynamic phase shift interface (unused by the current design).
     input  wire psclk,
@@ -68,8 +68,8 @@ module clock (
         .CLKFBOUT_USE_FINE_PS("FALSE"),
         .DIVCLK_DIVIDE       (1),
 
-        // ── Output 0: 108 MHz mclk ──
-        .CLKOUT0_DIVIDE_F    (7.000),
+        // ── Output 0: 54 MHz mclk ──
+        .CLKOUT0_DIVIDE_F    (14.000),
         .CLKOUT0_DUTY_CYCLE  (0.500),
         .CLKOUT0_PHASE       (0.000),
         .CLKOUT0_USE_FINE_PS ("FALSE"),

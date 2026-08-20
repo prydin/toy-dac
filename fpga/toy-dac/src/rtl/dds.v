@@ -4,10 +4,10 @@
 // -----------------------------------------------------------------------------
 // dds — IP-free replacement for the Xilinx DDS Compiler instance.
 //
-// Generates a fixed ~1 kHz sine wave at the aclk rate (assumed 108 MHz).
+// Generates a fixed ~1 kHz sine wave at the aclk rate.
 //
 //   Phase accumulator : 32 bits
-//   Increment         : 39_768  → 39768 * 108e6 / 2^32 ≈ 999.9954 Hz
+//   Increment         : round(2^32 * TONE_HZ / ACLK_HZ)
 //   Sine table        : 1024 entries × 18-bit signed (full period, no quarter-
 //                       wave folding — simple and small enough for a single
 //                       block-RAM or distributed-RAM inferral)
@@ -27,15 +27,17 @@
 // -----------------------------------------------------------------------------
 `default_nettype none
 
-module dds (
+module dds #(
+    parameter integer ACLK_HZ = 54_000_000,
+    parameter integer TONE_HZ = 1_000
+)(
     input  wire         aclk,
     output wire         m_axis_data_tvalid,
     output wire [31:0]  m_axis_data_tdata
 );
 
-    // Phase increment for ~1 kHz at 108 MHz aclk.
-    // round(2^32 * 1000 / 108_000_000) = 39_768
-    localparam [31:0] PHASE_INC = 32'd39_768;
+    localparam [31:0] PHASE_INC =
+        (((64'd1 << 32) * TONE_HZ) + (ACLK_HZ / 2)) / ACLK_HZ;
 
     reg [31:0] phase = 32'd0;
 

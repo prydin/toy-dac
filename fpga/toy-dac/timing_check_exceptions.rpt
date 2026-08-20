@@ -1,7 +1,7 @@
 Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
 ---------------------------------------------------------------------------------------------------------------------------------------------
 | Tool Version : Vivado v.2024.2 (win64) Build 5239630 Fri Nov 08 22:35:27 MST 2024
-| Date         : Mon Jul 20 21:08:35 2026
+| Date         : Tue Jul 21 11:06:15 2026
 | Host         : da_beast running 64-bit major release  (build 9200)
 | Command      : report_exceptions -file timing_check_exceptions.rpt
 | Design       : top
@@ -14,14 +14,16 @@ Exceptions Report
 
 Position  From                                                                              Through         To                                                                                Setup           Hold            Status           
 --------  --------------------------------------------------------------------------------  --------------  --------------------------------------------------------------------------------  --------------  --------------  -----------------
-2         [get_cells -hierarchical -filter {IS_SEQUENTIAL && (NAME =~ *dac_left/sigma_reg*  *               [get_cells -hierarchical -filter {IS_SEQUENTIAL && (NAME =~ *dac_left/sigma_reg*  cycles=8        -               
+2         [get_cells -hierarchical -filter {IS_SEQUENTIAL && (NAME =~ *dac_left/sigma_reg*  *               [get_cells -hierarchical -filter {IS_SEQUENTIAL && (NAME =~ *dac_left/sigma_reg*  cycles=4        -               
            || NAME =~ *dac_left/din_held_reg* || NAME =~ *dac_left/dither1_held_reg* || NA                   || NAME =~ *dac_left/dout_reg* || NAME =~ *dac_right/sigma_reg* || NAME =~ *dac                                  
           ME =~ *dac_left/dither2_held_reg* || NAME =~ *dac_right/sigma_reg* || NAME =~ *d                  _right/dout_reg*)}]                                                                                               
           ac_right/din_held_reg* || NAME =~ *dac_right/dither1_held_reg* || NAME =~ *dac_r                                                                                                                                    
           ight/dither2_held_reg*)}]                                                                                                                                                                                           
-3         [get_cells -hierarchical -filter {IS_SEQUENTIAL && (NAME =~ *dac_left/sigma_reg*  *               [get_cells -hierarchical -filter {IS_SEQUENTIAL && (NAME =~ *dac_left/sigma_reg*  -               cycles=7        
+3         [get_cells -hierarchical -filter {IS_SEQUENTIAL && (NAME =~ *dac_left/sigma_reg*  *               [get_cells -hierarchical -filter {IS_SEQUENTIAL && (NAME =~ *dac_left/sigma_reg*  -               cycles=3        
            || NAME =~ *dac_left/din_held_reg* || NAME =~ *dac_left/dither1_held_reg* || NA                   || NAME =~ *dac_left/dout_reg* || NAME =~ *dac_right/sigma_reg* || NAME =~ *dac                                  
           ME =~ *dac_left/dither2_held_reg* || NAME =~ *dac_right/sigma_reg* || NAME =~ *d                  _right/dout_reg*)}]                                                                                               
           ac_right/din_held_reg* || NAME =~ *dac_right/dither1_held_reg* || NAME =~ *dac_r                                                                                                                                    
           ight/dither2_held_reg*)}]                                                                                                                                                                                           
+4         [get_clocks { mclk_out }]                                                                         [get_clocks { mclk2x_out }]                                                       clock_group     clock_group     
+4         [get_clocks { mclk2x_out }]                                                                       [get_clocks { mclk_out }]                                                         clock_group     clock_group     
 

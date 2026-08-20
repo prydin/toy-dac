@@ -35,10 +35,10 @@ module asrc_tb;
     localparam integer PHASES        = 256;
     localparam integer TAPS          = 64;
     localparam integer OUT_DIV       = 64;
-    localparam integer MCLK_HZ       = 108_000_000;
-    localparam real    MCLK_PERIOD_NS = 1000.0 / 108.0;          // ≈9.259 ns
-    localparam [31:0]  STEP_44_1     = 32'd112_261_131;
-    localparam [31:0]  STEP_48K      = 32'd122_175_407;
+    localparam integer MCLK_HZ       = 54_000_000;              // fabric clock
+    localparam real    MCLK_PERIOD_NS = 1000.0 / 54.0;         // 54 MHz mclk period
+    localparam [31:0]  STEP_44_1     = 32'd224_483_589;
+    localparam [31:0]  STEP_48K      = 32'd244_335_917;
 
     // Stimulus — switch rate at compile time with +define+RATE_48K
 `ifdef RATE_48K
@@ -50,14 +50,21 @@ module asrc_tb;
 `endif
     localparam real    SIG_HZ_L      = 1_000.0;
     localparam real    SIG_HZ_R      = 1_500.0;
-    localparam integer SETTLE_MS     = 30;
-    localparam integer CAPTURE_OUTS  = 8192;
+    integer SETTLE_MS    = 30;
+    integer CAPTURE_OUTS = 8192;
+    real    settle_ns;
 
     real sig_ampl = 1.0;
     initial begin
         if (!$value$plusargs("SIG_AMPL=%f", sig_ampl))
             sig_ampl = 1.0;
-        $display("asrc_tb SIG_AMPL=%f FS", sig_ampl);
+        if (!$value$plusargs("SETTLE_MS=%d", SETTLE_MS))
+            SETTLE_MS = 30;
+        if (!$value$plusargs("CAPTURE_OUTS=%d", CAPTURE_OUTS))
+            CAPTURE_OUTS = 8192;
+        settle_ns = SETTLE_MS * 1.0e6;
+        $display("asrc_tb SIG_AMPL=%f FS  SETTLE_MS=%0d CAPTURE_OUTS=%0d",
+                 sig_ampl, SETTLE_MS, CAPTURE_OUTS);
     end
 
     // ── Clock / reset ───────────────────────────────────────────────
@@ -65,8 +72,8 @@ module asrc_tb;
     always #(MCLK_PERIOD_NS/2.0) clk = ~clk;
     reg rst = 1'b1;
 
-    // ── Producer NCO (real-rate -> mclk-aligned strobes) ────────────
-    real    prod_inc_real = (FS_IN_HZ * 4294967296.0) / (1.0e9 / MCLK_PERIOD_NS);
+    // ── Producer NCO (real-rate -> clk-aligned strobes, on 54 MHz) ──
+    real    prod_inc_real = (FS_IN_HZ * 4294967296.0) / 54_000_000.0;
     integer prod_inc      = 0;
     reg [31:0] prod_acc   = 32'd0;
     reg        sample_valid = 1'b0;
@@ -158,7 +165,6 @@ module asrc_tb;
     reg signed [WIDTH-1:0] max_l = -32'sh7FFFFFFF;
     reg signed [WIDTH-1:0] min_r = 32'sh7FFFFFFF;
     reg signed [WIDTH-1:0] max_r = -32'sh7FFFFFFF;
-    real    settle_ns = SETTLE_MS * 1.0e6;
     reg     capturing = 1'b0;
 
     initial begin

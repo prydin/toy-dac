@@ -36,6 +36,12 @@
 //     any nonzero step adjustment drifts the fill, so the only stable
 //     equilibrium is err = 0.
 //
+//   Because this controller is intentionally P-only by default, a
+//   real input-clock offset settles at a nonzero FIFO-depth error:
+//   step_adj = KP * err. Raise KP or add a cautious integral term if
+//   a large clock offset pushes the ring buffer close to its safe
+//   operating rails.
+//
 //   (A pure-integral controller on an integrator plant gives loop
 //   gain KI/s² — a harmonic oscillator, marginally stable, rings
 //   forever. Don't do that.)
