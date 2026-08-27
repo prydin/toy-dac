@@ -7,6 +7,10 @@
 set_property -dict {PACKAGE_PIN M9 IOSTANDARD LVCMOS33} [get_ports clk]
 create_clock -period 83.330 -name sys_clk_pin -waveform {0.000 41.660} [get_ports clk]
 
+## External clocks
+create_clock -period 44.288 -name ext_clk1_pin -waveform {0.000 22.144} [get_ports ext_clk1]
+create_clock -period 40.690 -name ext_clk2_pin -waveform {0.000 20.345} [get_ports ext_clk2]
+
 ## Push Buttons
 set_property -dict {PACKAGE_PIN D2 IOSTANDARD LVCMOS33} [get_ports {btn[0]}]
 set_property -dict {PACKAGE_PIN D1 IOSTANDARD LVCMOS33} [get_ports {btn[1]}]
@@ -23,10 +27,10 @@ set_property -dict {PACKAGE_PIN J1 IOSTANDARD LVCMOS33} [get_ports {led[2]}]
 set_property -dict {PACKAGE_PIN E1 IOSTANDARD LVCMOS33} [get_ports {led[3]}]
 
 ## Pmod Header JA
-set_property -dict { PACKAGE_PIN J2    IOSTANDARD LVCMOS33 SLEW FAST} [get_ports { dac_out_l_fast }]; #IO_L14P_T2_SRCC_34 Sch=ja[1]
-set_property -dict { PACKAGE_PIN H2    IOSTANDARD LVCMOS33 SLEW FAST} [get_ports { dac_out_ln_fast }]; #IO_L14N_T2_SRCC_34 Sch=ja[2]
-#set_property -dict { PACKAGE_PIN H4    IOSTANDARD LVCMOS33 } [get_ports { ja[2] }]; #IO_L13P_T2_MRCC_34 Sch=ja[3]
-#set_property -dict { PACKAGE_PIN F3    IOSTANDARD LVCMOS33 } [get_ports { ja[3] }]; #IO_L11N_T1_SRCC_34 Sch=ja[4]
+set_property -dict { PACKAGE_PIN J2    IOSTANDARD LVCMOS33 } [get_ports { ext_clk1_enable }]; #IO_L14P_T2_SRCC_34 Sch=ja[1]
+set_property -dict { PACKAGE_PIN H2    IOSTANDARD LVCMOS33 } [get_ports { ext_clk2_enable }]; #IO_L14N_T2_SRCC_34 Sch=ja[2]
+set_property -dict { PACKAGE_PIN H4    IOSTANDARD LVCMOS33 } [get_ports { ext_clk1 }]; #IO_L13P_T2_MRCC_34 Sch=ja[3]
+set_property -dict { PACKAGE_PIN F3    IOSTANDARD LVCMOS33 } [get_ports { ext_clk2 }]; #IO_L11N_T1_SRCC_34 Sch=ja[4]
 #set_property -dict { PACKAGE_PIN H3    IOSTANDARD LVCMOS33 } [get_ports { ja[4] }]; #IO_L13N_T2_MRCC_34 Sch=ja[7]
 #set_property -dict { PACKAGE_PIN H1    IOSTANDARD LVCMOS33 } [get_ports { ja[5] }]; #IO_L12P_T1_MRCC_34 Sch=ja[8]
 #set_property -dict { PACKAGE_PIN G1    IOSTANDARD LVCMOS33 } [get_ports { ja[6] }]; #IO_L12N_T1_MRCC_34 Sch=ja[9]

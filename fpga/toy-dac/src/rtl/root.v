@@ -1,10 +1,8 @@
 module top(
     input wire clk,             // 12MHz clock from crystal
     output wire dac_out_l,      // DAC delta/sigma out (+)
-    output wire dac_out_l_fast, // DAC delta/sigma out (+)
     output wire dac_out_r,      // Main clock output for debugging
     output wire dac_out_ln,     // DAC delta/sigma out (−), complement of dac_out_l
-    output wire dac_out_ln_fast,// DAC delta/sigma out (−), complement of dac_out_l_fast
     output wire dac_out_rn,     // Complement of dac_out_r
     output wire debug1,         // Debug output 
     output wire debug2,         // Debug output 
@@ -17,7 +15,11 @@ module top(
     input wire [1:0] btn,       // Push buttons
     output wire [3:0] led,      // LEDs for mode, clock/status, and dither indication
     output wire [4:0] fifo_led, // 5-step thermometer of ASRC ring-buffer fill (pio16-20)
-    output wire led0_b          // RGB LED blue channel — blinks on each ASRC adjust
+    output wire led0_b,         // RGB LED blue channel — blinks on each ASRC adjust
+    output wire ext_clk1_enable,// Enable external clock 1
+    output wire ext_clk2_enable,// Enable external clock 2
+    input wire ext_clk1,        // External clock 1 input
+    input wire ext_clk2         // External clock 2 input
 );
 
 
@@ -98,6 +100,7 @@ wire output_ready_right = 1'b1;
 // runs on mclk — rate matching is purely digital via the asrc module.
 wire mclk;
 wire mclk_locked;
+wire ext_clk; // Selected external clock (ext_clk1 or ext_clk2) if either is enabled, else 0.s
 
 // Hold everything in reset until the PLL locks and the clock is
 // stable. Without this, the DAC/FIR run on a glitching clock during
@@ -279,6 +282,16 @@ clock main_clock (
     .psen(1'b0),                // ASRC handles rate matching, no PS pulses
     .psincdec(1'b0),
     .psdone(ps_done_unused)
+);
+
+// -- External clock ----
+external_clock ext_clk_inst (
+    .ext_clk1_in(ext_clk1),
+    .ext_clk2_in(ext_clk2),
+    .ext_clk1_enable(ext_clk1_enable),
+    .ext_clk2_enable(ext_clk2_enable),
+    .clk_sel(0),          // TODO: Get from rate detector
+    .clk_out(ext_clk)
 );
 
 // ── I2S input ────────────────────────────────────────────────────
@@ -758,17 +771,11 @@ dac #(
 //
 // Each pad gets its own dedicated IOB flop, all clocked off the same
 // mclk edge. The inversion happens BEFORE the flop on the (−) legs so
-// the +/− pair has matched clock-to-out delay (sub-ps skew). The
-// `_fast` pads on PMOD JA1/JA2 are physically separate pins from the
-// A4/A3 pair, so they need their own flops too — sharing one register
-// across two pads forces fabric routing on one of them and reintroduces
-// +/− skew that shows up as 2nd-harmonic distortion.
+// the +/− pair has matched clock-to-out delay (sub-ps skew). 
 (* IOB = "TRUE" *) reg dac_out_l_r       = 0;
 (* IOB = "TRUE" *) reg dac_out_ln_r      = 0;
 (* IOB = "TRUE" *) reg dac_out_r_r       = 0;
 (* IOB = "TRUE" *) reg dac_out_rn_r      = 0;
-(* IOB = "TRUE" *) reg dac_out_l_fast_r  = 0;
-(* IOB = "TRUE" *) reg dac_out_ln_fast_r = 0;
 
 always @(posedge mclk) begin
     if (rst || mode == MODE_OFF || audio_mute) begin
@@ -776,22 +783,16 @@ always @(posedge mclk) begin
         dac_out_ln_r      <= 1'b0;
         dac_out_r_r       <= 1'b0;
         dac_out_rn_r      <= 1'b0;
-        dac_out_l_fast_r  <= 1'b0;
-        dac_out_ln_fast_r <= 1'b0;
     end else begin
         dac_out_l_r       <=  dac_raw_l;
         dac_out_ln_r      <= ~dac_raw_l;
         dac_out_r_r       <=  dac_raw_r;
         dac_out_rn_r      <= ~dac_raw_r;
-        dac_out_l_fast_r  <=  dac_raw_l;
-        dac_out_ln_fast_r <= ~dac_raw_l;
     end
 end
 
 assign dac_out_l       = dac_out_l_r;
 assign dac_out_ln      = dac_out_ln_r;
-assign dac_out_l_fast  = dac_out_l_fast_r;
-assign dac_out_ln_fast = dac_out_ln_fast_r;
 
 assign dac_out_r  = dac_out_r_r;
 assign dac_out_rn = dac_out_rn_r;
