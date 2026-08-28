@@ -1,0 +1,50 @@
+flowchart TB
+    subgraph SRC["Clock sources"]
+        XTAL["12 MHz crystal"]
+        EXT1["ext_clk1 22.5792 MHz\n(44.1k family)"]
+        EXT2["ext_clk2 24.576 MHz\n(48k family)"]
+    end
+
+    XTAL --> MMCM["MMCME2_ADV\n(clock.v: module clock)"]
+    MMCM -->|mclk 54 MHz| MCLKNET(("mclk domain"))
+
+    EXT1 --> BUFGMUX["BUFGMUX\n(clock.v: external_clock)"]
+    EXT2 --> BUFGMUX
+    BUFGMUX -->|sclk 22.5792/24.576 MHz| SCLKNET(("sclk domain"))
+
+    subgraph MCLK_DOMAIN["mclk domain — housekeeping"]
+        BTN["Buttons / debounce\n(mode, dither_en)"]
+        RDET["rate_detect\n(dedicated lrclk tap)"]
+        RMGR["rate_manager\n(classify 32k/44.1k/48k,\nrate_code, rm_mute, rm_asrc_rst)"]
+        LEDS["LEDs / status"]
+        RDET --> RMGR
+    end
+
+    LRCLK["lrclk pin"] --> RDET
+
+    MCLKNET --- BTN
+    MCLKNET --- RDET
+    MCLKNET --- RMGR
+    MCLKNET --- LEDS
+
+    RMGR -->|rate_code| BRIDGE["sclk_bridge\n(the ONLY CDC point)\nmute + reset + settle\non family change"]
+    MCLKNET --- BRIDGE
+    BRIDGE -->|clk_sel| BUFGMUX
+    SCLKNET --- BRIDGE
+    BRIDGE -->|prst, family_sel,\nrm_mute_sclk, mode_sclk| SCLK_DOMAIN
+
+    subgraph SCLK_DOMAIN["sclk domain — sample pipeline"]
+        I2S["i2s_inst\n(I2S receiver)"]
+        ASRC["asrc_inst\n(fractional ASRC +\nhalfbands + servo)"]
+        DAC["dac_left / dac_right\n(DSM modulator)"]
+        IOB["IOB output flops"]
+        I2S --> ASRC --> DAC --> IOB
+    end
+
+    BCLK["bclk / lrclk / din pins"] --> I2S
+    SCLKNET --- I2S
+    SCLKNET --- ASRC
+    SCLKNET --- DAC
+    SCLKNET --- IOB
+
+    IOB --> PADS["dac_out_l/ln, dac_out_r/rn"]
