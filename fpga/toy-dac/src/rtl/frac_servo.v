@@ -106,6 +106,7 @@ module frac_servo #(
     output wire        [31:0]                step,
 
     // Diagnostics
+    output wire        [$clog2(FIFO_DEPTH+1)-1:0] dbg_fifo_count,
     output wire signed [15:0]                dbg_error,
     output wire signed [31:0]                dbg_step_adj,
     output reg                               adjust = 1'b0
@@ -286,6 +287,7 @@ module frac_servo #(
     wire signed [32:0] step_sum = $signed({1'b0, step_nominal_in}) + pi_smooth;
     assign step = step_sum[31:0];
 
+    assign dbg_fifo_count = fifo_count;
     assign dbg_error    = err_q;
     assign dbg_step_adj = pi_smooth;
 

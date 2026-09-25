@@ -14,7 +14,8 @@ module top(
     input wire bypass,          // A/B test: HIGH = bypass ASRC, clock samples directly from I2S
     input wire [1:0] btn,       // Push buttons
     output wire [3:0] led,      // LEDs for mode, clock/status, and dither indication
-    output wire [4:0] fifo_led, // 5-step thermometer of ASRC ring-buffer fill (pio16-20)
+    inout  wire i2c_scl,        // I2C SCL (input only; no clock stretching)
+    inout  wire i2c_sda,        // I2C SDA (open-drain)
     output wire led0_b,         // RGB LED blue channel — blinks on each ASRC adjust
     output wire ext_clk1_enable,// Enable external clock 1
     output wire ext_clk2_enable,// Enable external clock 2
@@ -138,12 +139,18 @@ wire        i2s_left_accept;
 // Forward decl: 1-mclk pulse on lrclk rising edge from the I2S receiver's
 // internal synchronizer; referenced by the frame-integrity probe below.
 wire        lrclk_pos_edge_w;
+// Forward decl: I2C control-register (0x03) write pulse + data,
+// referenced by the mode/dither_en housekeeping block below but
+// driven by the registers instance further down.
+wire        i2c_reg3_wr;
+wire [7:0]  i2c_reg3_wdata;
 
 // Forward declarations for asrc instance outputs / legacy diagnostic
 // aliases — referenced by recovered_clk / debug assigns below before
 // the asrc instance proper.
 wire        asrc_in_consumed;
 wire signed [31:0] asrc_dbg_step_adj;
+wire [15:0]        asrc_dbg_servo_fifo_count;
 wire [15:0] asrc_samp_avail_l;
 wire        asrc_tick_l = asrc_in_consumed;
 wire signed [31:0] asrc_dbg_inc_adj = asrc_dbg_step_adj;   // legacy alias
@@ -183,12 +190,20 @@ reg btn0_prev = 0;
 reg btn1_prev = 0;
 reg [1:0] mode = MODE_I2S;
 reg dither_en = 1'b1;
+// New I2C-only control-register bits (0x03 bits 2/3/4). No physical
+// button drives these, so they only ever change on an I2C write.
+reg bypass_interp_ctrl = 1'b0;   // bit2: bypass upsample interp filter (stub, not yet wired)
+reg output_mute_ctrl   = 1'b0;   // bit3: force output pins low
+reg input_mute_ctrl    = 1'b0;   // bit4: force I2S input data to zero
 always @(posedge mclk) begin
     if (rst) begin
-        btn0_prev <= 0;
-        btn1_prev <= 0;
-        mode      <= MODE_I2S;
-        dither_en <= 1'b1;
+        btn0_prev          <= 0;
+        btn1_prev          <= 0;
+        mode               <= MODE_I2S;
+        dither_en          <= 1'b1;
+        bypass_interp_ctrl <= 1'b0;
+        output_mute_ctrl   <= 1'b0;
+        input_mute_ctrl    <= 1'b0;
     end else begin
         btn0_prev <= btn0_db;
         btn1_prev <= btn1_db;
@@ -201,6 +216,16 @@ always @(posedge mclk) begin
         end
         if (btn1_db && !btn1_prev)
             dither_en <= ~dither_en;
+
+        // I2C write to control register 0x03 — last-writer-wins against
+        // the buttons for the bits they share (dither/mode).
+        if (i2c_reg3_wr) begin
+            dither_en          <= i2c_reg3_wdata[0];
+            mode               <= i2c_reg3_wdata[1] ? MODE_DDS : MODE_I2S;
+            bypass_interp_ctrl <= i2c_reg3_wdata[2];
+            output_mute_ctrl   <= i2c_reg3_wdata[3];
+            input_mute_ctrl    <= i2c_reg3_wdata[4];
+        end
     end
 end
 
@@ -225,6 +250,20 @@ always @(posedge sclk) begin
     dither_en_sclk_r <= dither_en_sync;
 end
 wire dither_en_sclk = dither_en_sclk_r;
+
+reg output_mute_sync = 1'b0, output_mute_sclk_r = 1'b0;
+always @(posedge sclk) begin
+    output_mute_sync   <= output_mute_ctrl;
+    output_mute_sclk_r <= output_mute_sync;
+end
+wire output_mute_sclk = output_mute_sclk_r;
+
+reg input_mute_sync = 1'b0, input_mute_sclk_r = 1'b0;
+always @(posedge sclk) begin
+    input_mute_sync   <= input_mute_ctrl;
+    input_mute_sclk_r <= input_mute_sync;
+end
+wire input_mute_sclk = input_mute_sclk_r;
 
 // Debug pins.
 //   debug1 = stretched ASRC servo-adjust pulse.
@@ -526,9 +565,9 @@ wire i2s_left_silent  = (i2s_left  < I2S_SILENCE_POS) && (i2s_left  > I2S_SILENC
 wire i2s_right_silent = (i2s_right < I2S_SILENCE_POS) && (i2s_right > I2S_SILENCE_NEG);
 
 wire signed [I2S_WORDLENGTH-1:0] i2s_left_for_asrc  =
-    ((I2S_SILENCE_CLAMP != 0) && i2s_left_silent)  ? {I2S_WORDLENGTH{1'b0}} : i2s_left;
+    (((I2S_SILENCE_CLAMP != 0) && i2s_left_silent)  || input_mute_sclk) ? {I2S_WORDLENGTH{1'b0}} : i2s_left;
 wire signed [I2S_WORDLENGTH-1:0] i2s_right_for_asrc =
-    ((I2S_SILENCE_CLAMP != 0) && i2s_right_silent) ? {I2S_WORDLENGTH{1'b0}} : i2s_right;
+    (((I2S_SILENCE_CLAMP != 0) && i2s_right_silent) || input_mute_sclk) ? {I2S_WORDLENGTH{1'b0}} : i2s_right;
 
 wire signed [I2S_WORDLENGTH-1:0] asrc_left_in =
     dds_asrc_mode ? dds_data : i2s_left_for_asrc;
@@ -578,6 +617,7 @@ asrc #(
     .dbg_step            (asrc_dbg_step),
     .dbg_servo_error     (asrc_dbg_error),
     .dbg_servo_step_adj  (asrc_dbg_step_adj),
+    .dbg_servo_fifo_count (asrc_dbg_servo_fifo_count),
     .adjust              (asrc_adjust)
 );
 
@@ -687,55 +727,35 @@ always @(*) begin
 end
 
 
-// ── Diagnostic: 5-step peak-hold thermometer of ASRC ring fill ──
-// Always on (regardless of lock state) so we can directly observe
-// FIFO overflow / underflow on rate changes or servo instability.
-// Track the high-water mark of asrc_samp_avail_l over a refresh
-// window, then drive 5 LEDs as a thermometer of the peak fill.
-// Thresholds centred on SAMP_SETPOINT=128 in a 4*TAPS=256 ring;
-// safe range is [1, 193]:
-//
-//   bit0 >= 32    not nearly empty
-//   bit1 >= 96    below setpoint
-//   bit2 >= 128   at/above setpoint
-//   bit3 >= 160   above setpoint
-//   bit4 >= 192   OVERFLOW (FIR safe upper is 193)
-//
-// Refresh ~1 s so a single excursion stays visible to the eye.
-// Bit 4 — if it ever lights, the FIFO has been driven to the rail.
-localparam integer LED_WIN_BITS = 27;   // 2^27 / 22.5 MHz ≈ 5.9 s (varies ~8% by family)
-reg [15:0]  samp_avail_max     = 16'd0;
-reg [15:0]  samp_avail_max_lat = 16'd0;
-reg [LED_WIN_BITS-1:0] led_refresh = 0;
-always @(posedge sclk) begin
-    if (prst) begin
-        samp_avail_max     <= 16'd0;
-        samp_avail_max_lat <= 16'd0;
-        led_refresh        <= 0;
-    end else begin
-        if (asrc_samp_avail_l > samp_avail_max)
-            samp_avail_max <= asrc_samp_avail_l;
-        led_refresh <= led_refresh + 1'b1;
-        if (led_refresh == {LED_WIN_BITS{1'b0}}) begin
-            samp_avail_max_lat <= samp_avail_max;
-            samp_avail_max     <= asrc_samp_avail_l;
-        end
-    end
-end
+// ── I2C control/status interface ────────────────────────────────
+// The I2C pins are top-level ports; register map and status synchronization
+// live in registers.v.
 
-reg [4:0] fifo_led_r = 5'b00000;
-always @(posedge sclk) begin
-    if (prst) begin
-        fifo_led_r <= 5'b10101;   // visible startup pattern
-    end else begin
-        fifo_led_r[0] <= (samp_avail_max_lat >= 16'd32);
-        fifo_led_r[1] <= (samp_avail_max_lat >= 16'd96);
-        fifo_led_r[2] <= (samp_avail_max_lat >= 16'd128);
-        fifo_led_r[3] <= (samp_avail_max_lat >= 16'd160);
-        fifo_led_r[4] <= (samp_avail_max_lat >= 16'd192);
-    end
-end
-assign fifo_led = fifo_led_r;
+registers #(
+    .SCLK_HZ_NOM(SCLK_HZ_NOM)
+) registers_inst (
+    .mclk             (mclk),
+    .rst              (rst),
+    .sclk             (sclk),
+    .prst             (prst),
+    .rate_locked      (rm_rate_locked),
+    .rate_code        (rm_rate_code),
+    .asrc_enable      (asrc_enable),
+    .asrc_samp_avail_l(asrc_samp_avail_l),
+    .asrc_samp_avail_r(asrc_samp_avail_r),
+    .dither_en        (dither_en),
+    .mode             (mode),
+    .bypass_interp_ctrl(bypass_interp_ctrl),
+    .output_mute_ctrl (output_mute_ctrl),
+    .input_mute_ctrl  (input_mute_ctrl),
+    .servo_error      (asrc_dbg_error),
+    .servo_step_adj   (asrc_dbg_step_adj),
+    .servo_fifo_count (asrc_dbg_servo_fifo_count),
+    .i2c_scl          (i2c_scl),
+    .i2c_sda          (i2c_sda),
+    .i2c_reg3_wr      (i2c_reg3_wr),
+    .i2c_reg3_wdata   (i2c_reg3_wdata)
+);
 
 
 // (Legacy interpolator100x / FIR Compiler IP removed. The fractional
@@ -854,7 +874,7 @@ dac #(
 (* IOB = "TRUE" *) reg dac_out_rn_r      = 0;
 
 always @(posedge sclk) begin
-    if (prst || mode_sclk == MODE_OFF || audio_mute) begin
+    if (prst || mode_sclk == MODE_OFF || audio_mute || output_mute_sclk) begin
         dac_out_l_r       <= 1'b0;
         dac_out_ln_r      <= 1'b0;
         dac_out_r_r       <= 1'b0;
