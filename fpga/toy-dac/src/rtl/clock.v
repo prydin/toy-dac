@@ -144,8 +144,7 @@ module external_clock (
     input  wire clk_sel,          // 0 = ext_clk1, 1 = ext_clk2
     output wire clk_out);
 
-// Clock selection logic
-assign clk_out = clk_sel ? ext_clk2_in : ext_clk1_in;
+assign clk_out = clk_sel ? ext_clk2_in : ext_clk1_in;  
 assign ext_clk1_enable = ~clk_sel;
 assign ext_clk2_enable = clk_sel;
 

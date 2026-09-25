@@ -11,6 +11,20 @@ create_clock -period 83.330 -name sys_clk_pin -waveform {0.000 41.660} [get_port
 create_clock -period 44.288 -name ext_clk1_pin -waveform {0.000 22.144} [get_ports ext_clk1]
 create_clock -period 40.690 -name ext_clk2_pin -waveform {0.000 20.345} [get_ports ext_clk2]
 
+# ext_clk1/ext_clk2 both reach the BUFGMUX in external_clock (clock.v)
+# but only one drives sclk at a time — the other input is a genuinely
+# independent, unrelated oscillator, not just an unused path. Without
+# this, Vivado has no way to know the two clocks never coexist and
+# tries to close timing between them (and between either one and
+# mclk) through every sclk-domain register, which is both impossible
+# (unrelated clocks) and very slow to route around. sclk_bridge.v is
+# the only crossing point between mclk and sclk, and it's built from
+# 2-FF synchronizers / an async-assert reset bridge, not timed paths.
+set_clock_groups -asynchronous \
+    -group [get_clocks sys_clk_pin] \
+    -group [get_clocks ext_clk1_pin] \
+    -group [get_clocks ext_clk2_pin]
+
 ## Push Buttons
 set_property -dict {PACKAGE_PIN D2 IOSTANDARD LVCMOS33} [get_ports {btn[0]}]
 set_property -dict {PACKAGE_PIN D1 IOSTANDARD LVCMOS33} [get_ports {btn[1]}]
@@ -30,11 +44,14 @@ set_property -dict {PACKAGE_PIN E1 IOSTANDARD LVCMOS33} [get_ports {led[3]}]
 set_property -dict { PACKAGE_PIN J2    IOSTANDARD LVCMOS33 } [get_ports { ext_clk1_enable }]; #IO_L14P_T2_SRCC_34 Sch=ja[1]
 set_property -dict { PACKAGE_PIN H2    IOSTANDARD LVCMOS33 } [get_ports { ext_clk2_enable }]; #IO_L14N_T2_SRCC_34 Sch=ja[2]
 set_property -dict { PACKAGE_PIN H4    IOSTANDARD LVCMOS33 } [get_ports { ext_clk1 }]; #IO_L13P_T2_MRCC_34 Sch=ja[3]
-set_property -dict { PACKAGE_PIN F3    IOSTANDARD LVCMOS33 } [get_ports { ext_clk2 }]; #IO_L11N_T1_SRCC_34 Sch=ja[4]
+# ext_clk2 must be on the P-side of its clock-capable pair to drive a
+# BUFGMUX (PLIO-9); F3 is the N-side of the same L11 pair, moved to
+# ja[10] (F4) instead — requires re-wiring the oscillator to ja[10].
+#set_property -dict { PACKAGE_PIN F4    IOSTANDARD LVCMOS33 } [get_ports { ext_clk2 }]; #IO_L11P_T1_SRCC_34 Sch=ja[10]
 #set_property -dict { PACKAGE_PIN H3    IOSTANDARD LVCMOS33 } [get_ports { ja[4] }]; #IO_L13N_T2_MRCC_34 Sch=ja[7]
-#set_property -dict { PACKAGE_PIN H1    IOSTANDARD LVCMOS33 } [get_ports { ja[5] }]; #IO_L12P_T1_MRCC_34 Sch=ja[8]
+set_property -dict { PACKAGE_PIN G1    IOSTANDARD LVCMOS33 } [get_ports { ext_clk2 }]; #IO_L12P_T1_MRCC_34 Sch=ja[8]
 #set_property -dict { PACKAGE_PIN G1    IOSTANDARD LVCMOS33 } [get_ports { ja[6] }]; #IO_L12N_T1_MRCC_34 Sch=ja[9]
-#set_property -dict { PACKAGE_PIN F4    IOSTANDARD LVCMOS33 } [get_ports { ja[7] }]; #IO_L11P_T1_SRCC_34 Sch=ja[10]
+#set_property -dict { PACKAGE_PIN F3    IOSTANDARD LVCMOS33 } [get_ports { ja[7] }]; #IO_L11N_T1_SRCC_34 Sch=ja[4]
 
 ## USB UART
 ## Note: Port names are from the perspoctive of the FPGA.
@@ -80,7 +97,7 @@ set_property -dict {PACKAGE_PIN B2 IOSTANDARD LVCMOS33} [get_ports {fifo_led[4]}
 #set_property -dict { PACKAGE_PIN M13   IOSTANDARD LVCMOS33 } [get_ports { pio30 }]; #IO_L8P_T1_D11_14 Sch=pio[30]
 #set_property -dict {PULLUP TRUE} [get_ports pio30]
 #set_property -dict { PACKAGE_PIN J11   IOSTANDARD LVCMOS33 } [get_ports { pio31 }]; #IO_0_14 Sch=pio[31]
-#set_property -dict { PACKAGE_PIN C5    IOSTANDARD LVCMOS33 } [get_ports { pio40 }]; #IO_L5P_T0_34 Sch=pio[40]
+#set_property -dict { PACKAGE_PIN C5    IOSTANDARD LVCMOS33 } [get_ports { ext_clk_dbg }]; #IO_L5P_T0_34 Sch=pio[40]
 #set_property -dict { PACKAGE_PIN A2    IOSTANDARD LVCMOS33 } [get_ports { pio41 }]; #IO_L2N_T0_34 Sch=pio[41]
 #set_property -dict { PACKAGE_PIN B2    IOSTANDARD LVCMOS33 } [get_ports { pio42 }]; #IO_L2P_T0_34 Sch=pio[42]
 #set_property -dict { PACKAGE_PIN B1    IOSTANDARD LVCMOS33 } [get_ports { pio43 }]; #IO_L4N_T0_34 Sch=pio[43]
