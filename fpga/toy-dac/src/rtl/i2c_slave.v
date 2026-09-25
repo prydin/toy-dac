@@ -18,7 +18,7 @@ module i2c_slave #(
     input  wire       clk,
     input  wire       rst,
 
-    input  wire        scl_in,
+    input  wire        scl_in,  
     output wire        scl_oe,     // unused: this slave never clock-stretches
     input  wire        sda_in,
     output wire        sda_oe,
