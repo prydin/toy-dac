@@ -32,3 +32,4 @@ spice/output.qopraw
 /kicad/dac-ng/dac-ng-backups
 *.zip
 kicad/dac-ng/.history/
+kicad/dac-ng/clock/.history/
