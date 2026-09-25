@@ -94,6 +94,7 @@ module asrc #(
     output wire        [31:0]      dbg_step,
     output wire signed [15:0]      dbg_servo_error,
     output wire signed [31:0]      dbg_servo_step_adj,
+    output wire        [15:0]      dbg_servo_fifo_count,
     output wire                    adjust                  // 1-cycle pulse on PI update
 );
 
@@ -129,6 +130,7 @@ module asrc #(
     // but cap defensively so a transient overshoot can't garble the
     // servo's error math).
     localparam integer SAMP_DEPTH = 4 * TAPS;
+    wire [$clog2(SAMP_DEPTH+1)-1:0] servo_fifo_count_narrow;
     wire [$clog2(SAMP_DEPTH+1)-1:0] samp_avail_clamped =
         (samp_avail_l > SAMP_DEPTH[15:0]) ? SAMP_DEPTH[$clog2(SAMP_DEPTH+1)-1:0]
                                           : samp_avail_l[$clog2(SAMP_DEPTH+1)-1:0];
@@ -148,6 +150,7 @@ module asrc #(
         .step_nominal_in (step_nom_eff),
         .fifo_count      (samp_avail_clamped),
         .step            (step_eff),
+        .dbg_fifo_count  (servo_fifo_count_narrow),
         .dbg_error       (dbg_servo_error),
         .dbg_step_adj    (dbg_servo_step_adj),
         .adjust          (adjust)
@@ -305,6 +308,8 @@ module asrc #(
     assign dac_dv_right        = h3_r_dv;
     assign dbg_samples_avail_l = samp_avail_l;
     assign dbg_samples_avail_r = samp_avail_r;
+    assign dbg_servo_fifo_count = {{(16-$clog2(SAMP_DEPTH+1)){1'b0}},
+                                    servo_fifo_count_narrow};
     assign in_consumed         = in_consumed_l;
     assign dbg_step            = step_eff;
 

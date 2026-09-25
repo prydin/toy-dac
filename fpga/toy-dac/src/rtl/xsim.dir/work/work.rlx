@@ -1,0 +1,22 @@
+0.7
+2020.2
+Nov  8 2024
+22:36:57
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/asrc.v,1784651609,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/fractional_asrc.v,,asrc,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/clock.v,1787880979,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/debounce.v,,clock;external_clock,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/dac.v,1784633192,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/asrc.v,,dac,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/dds.v,1784636458,systemVerilog,,,,dds,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/debounce.v,1777835944,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/mono_ff.v,,debounce,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/dsm_coeffs.vh,1784633192,verilog,,,,,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/frac_servo.v,1784642970,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/dds.v,,frac_servo,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/fractional_asrc.v,1784633192,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/halfband_up2.v,,fractional_asrc,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/halfband_up2.v,1777900043,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/frac_servo.v,,halfband_up2,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/i2c_slave.v,1789260066,verilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/root.v,,i2c_slave,,,.,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/i2s.v,1777835944,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/rate_detect.v,,flop_sync;i2s,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/mono_ff.v,1784406975,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/random.v,,mono_ff,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/random.v,1778069936,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/dac.v,,random,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/rate_detect.v,1777835944,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/rate_manager.v,,rate_detect,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/rate_manager.v,1777596094,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/sclk_bridge.v,,rate_manager,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/registers.v,1789919295,verilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/i2c_slave.v,,registers,,,.,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/root.v,1789260281,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/i2s.v,C:/proj/toy-dac/fpga/toy-dac/src/rtl/dsm_coeffs.vh,top,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/sclk_bridge.v,1787792800,systemVerilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/clock.v,,sclk_bridge,,,,,,,,
