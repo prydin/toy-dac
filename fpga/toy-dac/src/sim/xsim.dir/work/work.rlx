@@ -1,0 +1,8 @@
+0.7
+2020.2
+Nov  8 2024
+22:36:57
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/i2c_slave.v,1790342849,verilog,,C:/proj/toy-dac/fpga/toy-dac/src/rtl/registers.v,,i2c_slave,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/registers.v,1790342849,verilog,,C:/proj/toy-dac/fpga/toy-dac/src/sim/i2c_volume_tb.v,,registers,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/rtl/volume_control.v,1790383131,verilog,,C:/proj/toy-dac/fpga/toy-dac/src/sim/volume_control_tb.v,,volume_control,,,,,,,,
+C:/proj/toy-dac/fpga/toy-dac/src/sim/volume_control_tb.v,1790342849,verilog,,,,volume_control_tb,,,,,,,,

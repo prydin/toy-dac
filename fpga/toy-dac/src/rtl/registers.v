@@ -9,7 +9,7 @@
 //   - single-byte register pointer, no auto-increment
 //   - register read: START, slave addr + R, then read 1 byte
 //   - register write: START, slave addr + W, reg pointer, data byte
-//   - register 0x03 is the only writable register; the others are read-only
+//   - registers 0x03 and 0x0C are writable; the others are read-only
 //
 // Register 0x00 — RATE_STATUS (RO)
 //   Bit 7: family flag, 0 = 44.1 kHz family, 1 = 48 kHz family
@@ -58,6 +58,10 @@
 //   The exact FIFO count presented to the servo, little-endian. This is a
 //   diagnostic comparison against FIFO_FULLNESS, which crosses to mclk.
 //
+// Register 0x0C — VOLUME (RW)
+//   Attenuation in 0.5 dB steps: 0x00 = 0 dB, 0x01 = -0.5 dB, ...,
+//   0xFE = -127 dB, and 0xFF = mute. One value controls both channels.
+//
 // Notes:
 //   - This interface uses the open-drain SDA line and does not clock-stretch.
 //   - The slave is intentionally a minimal protocol implementation: no
@@ -85,7 +89,9 @@ module registers #(
     inout  wire        i2c_scl,
     inout  wire        i2c_sda,
     output wire        i2c_reg3_wr,
-    output wire [7:0]  i2c_reg3_wdata
+    output wire [7:0]  i2c_reg3_wdata,
+    output reg  [7:0]  volume_target = 8'd0,
+    output reg          volume_update_toggle = 1'b0
 );
 
     // 0x00 sample-rate byte: bit7=family (0=44.1k, 1=48k),
@@ -158,6 +164,18 @@ module registers #(
     wire [7:0] i2c_reg9_step_adj_b3 = servo_step_adj[31:24];
     wire [7:0] i2c_reg10_servo_fifo_count_lo = servo_fifo_count[7:0];
     wire [7:0] i2c_reg11_servo_fifo_count_hi = servo_fifo_count[15:8];
+    wire [7:0] i2c_reg12_wdata;
+    wire       i2c_reg12_wr;
+
+    always @(posedge mclk) begin
+        if (rst) begin
+            volume_target        <= 8'd0;
+            volume_update_toggle <= 1'b0;
+        end else if (i2c_reg12_wr) begin
+            volume_target        <= i2c_reg12_wdata;
+            volume_update_toggle <= ~volume_update_toggle;
+        end
+    end
 
     wire i2c_sda_oe;
     assign i2c_scl = 1'bz;
@@ -184,8 +202,11 @@ module registers #(
         .reg9_rdata(i2c_reg9_step_adj_b3),
         .reg10_rdata(i2c_reg10_servo_fifo_count_lo),
         .reg11_rdata(i2c_reg11_servo_fifo_count_hi),
+        .reg12_rdata(volume_target),
         .reg3_wdata(i2c_reg3_wdata),
-        .reg3_wr   (i2c_reg3_wr)
+        .reg3_wr   (i2c_reg3_wr),
+        .reg12_wdata(i2c_reg12_wdata),
+        .reg12_wr   (i2c_reg12_wr)
     );
 endmodule
 

@@ -35,8 +35,11 @@ module i2c_slave #(
     input  wire [7:0]  reg9_rdata,  // 0x09 step adjustment byte 3
     input  wire [7:0]  reg10_rdata, // 0x0A servo FIFO count low byte
     input  wire [7:0]  reg11_rdata, // 0x0B servo FIFO count high byte
+    input  wire [7:0]  reg12_rdata, // 0x0C volume attenuation (RW)
     output reg  [7:0]  reg3_wdata = 8'd0,
-    output reg         reg3_wr    = 1'b0   // 1-cycle pulse on write to 0x03
+    output reg         reg3_wr    = 1'b0,  // 1-cycle pulse on write to 0x03
+    output reg  [7:0]  reg12_wdata = 8'd0,
+    output reg         reg12_wr    = 1'b0  // 1-cycle pulse on write to 0x0C
 );
 
     localparam S_IDLE       = 4'd0;
@@ -91,15 +94,17 @@ module i2c_slave #(
             8'd9:    reg_rdata_mux = reg9_rdata;
             8'd10:   reg_rdata_mux = reg10_rdata;
             8'd11:   reg_rdata_mux = reg11_rdata;
+            8'd12:   reg_rdata_mux = reg12_rdata;
             default: reg_rdata_mux = 8'hFF;
         endcase
     endfunction
 
-    wire reg_ptr_writable = (reg_ptr == 8'd3);
+    wire reg_ptr_writable = (reg_ptr == 8'd3) || (reg_ptr == 8'd12);
     wire [7:0] reg_ptr_rdata = reg_rdata_mux(reg_ptr);
 
     always @(posedge clk) begin
-        reg3_wr <= 1'b0;
+        reg3_wr  <= 1'b0;
+        reg12_wr <= 1'b0;
         if (rst) begin
             state     <= S_IDLE;
             bit_cnt   <= 4'd0;
@@ -172,9 +177,9 @@ module i2c_slave #(
                             ack_high_seen <= 1'b0;
                             reg_ptr       <= shreg_in;
                             bit_cnt       <= 4'd0;
-                            state         <= (shreg_in > 8'd11) ? S_IDLE : S_WR;
+                            state         <= (shreg_in > 8'd12) ? S_IDLE : S_WR;
                         end else begin
-                            sda_drive <= (shreg_in <= 8'd11);
+                            sda_drive <= (shreg_in <= 8'd12);
                         end
                     end
                     if (scl_rise)
@@ -201,8 +206,13 @@ module i2c_slave #(
                             sda_drive     <= 1'b0;
                             ack_high_seen <= 1'b0;
                             if (reg_ptr_writable) begin
-                                reg3_wdata <= shreg_in;
-                                reg3_wr    <= 1'b1;
+                                if (reg_ptr == 8'd3) begin
+                                    reg3_wdata <= shreg_in;
+                                    reg3_wr    <= 1'b1;
+                                end else begin
+                                    reg12_wdata <= shreg_in;
+                                    reg12_wr    <= 1'b1;
+                                end
                             end
                             bit_cnt <= 4'd0;
                             state   <= S_WR;

@@ -144,6 +144,8 @@ wire        lrclk_pos_edge_w;
 // driven by the registers instance further down.
 wire        i2c_reg3_wr;
 wire [7:0]  i2c_reg3_wdata;
+wire [7:0]  volume_target;
+wire        volume_update_toggle;
 
 // Forward declarations for asrc instance outputs / legacy diagnostic
 // aliases — referenced by recovered_clk / debug assigns below before
@@ -754,7 +756,9 @@ registers #(
     .i2c_scl          (i2c_scl),
     .i2c_sda          (i2c_sda),
     .i2c_reg3_wr      (i2c_reg3_wr),
-    .i2c_reg3_wdata   (i2c_reg3_wdata)
+    .i2c_reg3_wdata   (i2c_reg3_wdata),
+    .volume_target    (volume_target),
+    .volume_update_toggle(volume_update_toggle)
 );
 
 
@@ -819,6 +823,28 @@ wire dac_dvalid_r =
         (asrc_path)                 ? dac_dv_right        :
                                       src_valid_right;
 
+wire signed [I2S_WORDLENGTH-1:0] volume_dout_left;
+wire signed [I2S_WORDLENGTH-1:0] volume_dout_right;
+wire volume_dvalid_left;
+wire volume_dvalid_right;
+
+volume_control #(
+    .RAMP_CYCLES(SCLK_HZ_NOM / 2000)
+) volume_inst (
+    .clk                       (sclk),
+    .rst                       (prst),
+    .target_volume_async       (volume_target),
+    .target_update_toggle_async(volume_update_toggle),
+    .in_left                   (dac_din_left),
+    .in_right                  (dac_din_right),
+    .in_valid_left             (dac_dvalid_l),
+    .in_valid_right            (dac_dvalid_r),
+    .out_left                  (volume_dout_left),
+    .out_right                 (volume_dout_right),
+    .out_valid_left            (volume_dvalid_left),
+    .out_valid_right           (volume_dvalid_right)
+);
+
 dac #(
     .WORDLENGTH(MODULATOR_WORDLENGTH),
     .ORDER(MODULATOR_ORDER),
@@ -833,8 +859,8 @@ dac #(
 ) dac_left (
     .clk(sclk),
     .rst(prst),
-    .din(dac_din_left), 
-    .dvalid(dac_dvalid_l),
+    .din(volume_dout_left),
+    .dvalid(volume_dvalid_left),
     .dither1(dither1),
     .dither2(dither2),
     .dout(dac_raw_l)
@@ -855,8 +881,8 @@ dac #(
 ) dac_right (
     .clk(sclk),
     .rst(prst),
-    .din(dac_din_right), 
-    .dvalid(dac_dvalid_r),
+    .din(volume_dout_right),
+    .dvalid(volume_dvalid_right),
     .dither1(dither1),
     .dither2(dither2),
     .dout(dac_raw_r)
